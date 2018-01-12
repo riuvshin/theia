@@ -13,7 +13,7 @@
    This file can be removed once we have real unit
    tests in place. */
 
-describe("markdown package", () => {
+describe("preview package", () => {
 
     it("support code coverage statistics", () => true);
 

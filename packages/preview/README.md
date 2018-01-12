@@ -1,6 +1,6 @@
-# Theia - Markdown Extension
+# Theia - Preview Extension
 
-Shows user notification.
+Shows a preview of supported resources.
 
 See [here](https://github.com/theia-ide/theia).
 

@@ -1,0 +1,251 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.theia-preview-widget {
+	font-family: "Segoe WPC", "Segoe UI", "SFUIText-Light", "HelveticaNeue-Light", sans-serif, "Droid Sans Fallback";
+	font-size: 14px;
+	padding: 0 26px;
+	line-height: 22px;
+	word-wrap: break-word;
+	overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.theia-preview-widget:focus {
+    outline: 0;
+    box-shadow: none;
+}
+
+.theia-preview-widget.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+.theia-preview-widget.showEditorSelection .code-line {
+	position: relative;
+}
+
+.theia-preview-widget.showEditorSelection .code-active-line:before,
+.theia-preview-widget.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+.theia-preview-widget.showEditorSelection li.code-active-line:before,
+.theia-preview-widget.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vs .theia-preview-widget.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vs .theia-preview-widget.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vs .theia-preview-widget.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vs-dark .theia-preview-widget.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vs-dark .theia-preview-widget.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vs-dark .theia-preview-widget.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.hc-black .theia-preview-widget.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.hc-black .theia-preview-widget.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.hc-black .theia-preview-widget.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.theia-preview-widget img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+.theia-preview-widget a {
+	color: #4080D0;
+	text-decoration: none;
+}
+
+.theia-preview-widget a:focus,
+.theia-preview-widget input:focus,
+.theia-preview-widget select:focus,
+.theia-preview-widget textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+.theia-preview-widget hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+.theia-preview-widget h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+.theia-preview-widget h1, h2, h3 {
+	font-weight: normal;
+}
+
+.theia-preview-widget h1 code,
+.theia-preview-widget h2 code,
+.theia-preview-widget h3 code,
+.theia-preview-widget h4 code,
+.theia-preview-widget h5 code,
+.theia-preview-widget h6 code {
+	font-size: inherit;
+	line-height: auto;
+}
+
+.theia-preview-widget a:hover {
+	color: #4080D0;
+	text-decoration: underline;
+}
+
+.theia-preview-widget table {
+	border-collapse: collapse;
+}
+
+.theia-preview-widget table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+.theia-preview-widget table > thead > tr > th,
+.theia-preview-widget table > thead > tr > td,
+.theia-preview-widget table > t.theia-preview-widget > tr > th,
+.theia-preview-widget table > t.theia-preview-widget > tr > td {
+	padding: 5px 10px;
+}
+
+.theia-preview-widget table > t.theia-preview-widget > tr + tr > td {
+	border-top: 1px solid;
+}
+
+.theia-preview-widget blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left: 5px solid;
+}
+
+.theia-preview-widget code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 14px;
+	line-height: 19px;
+}
+
+.theia-preview-widget.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+.theia-preview-widget.mac code {
+	font-size: 12px;
+	line-height: 18px;
+}
+
+.theia-preview-widget pre:not(.hljs),
+.theia-preview-widget pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+/** Theming */
+
+.vs .theia-preview-widget,
+.vs .theia-preview-widget pre code {
+	color: rgb(30, 30, 30);
+}
+
+.vs-dark .theia-preview-widget,
+.vs-dark .theia-preview-widget pre code {
+	color: #DDD;
+}
+
+.hc-black .theia-preview-widget,
+.hc-black .theia-preview-widget pre code {
+	color: white;
+}
+
+.vs .theia-preview-widget code {
+	color: #A31515;
+}
+
+.vs-dark .theia-preview-widget code {
+	color: #D7BA7D;
+}
+
+.vs .theia-preview-widget pre:not(.hljs),
+.vs .theia-preview-widget code > div {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vs-dark .theia-preview-widget pre:not(.hljs),
+.vs-dark .theia-preview-widget code > div {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.hc-black .theia-preview-widget pre:not(.hljs),
+.hc-black .theia-preview-widget code > div {
+	background-color: rgb(0, 0, 0);
+}
+
+.hc-black .theia-preview-widget h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vs .theia-preview-widget table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vs-dark .theia-preview-widget table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vs .theia-preview-widget h1,
+.vs .theia-preview-widget hr,
+.vs .theia-preview-widget table > t.theia-preview-widget > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vs-dark .theia-preview-widget h1,
+.vs-dark .theia-preview-widget hr,
+.vs-dark .theia-preview-widget table > t.theia-preview-widget > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+.vs .theia-preview-widget blockquote,
+.vs-dark .theia-preview-widget blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.hc-black .theia-preview-widget blockquote {
+	background: transparent;
+	border-color: #fff;
+}
