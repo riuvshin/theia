@@ -15,6 +15,7 @@ export interface PreviewHandler {
     canHandle(uri: URI): boolean;
     renderHTML(content: string): string;
     findElementForSourceLine(sourceLine: number, renderedNode: Element): Element | undefined;
+    getSourceLineForElement(selectedElement: Element): number | undefined;
 }
 
 @injectable()

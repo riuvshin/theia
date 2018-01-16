@@ -9,6 +9,7 @@ import { inject, injectable } from "inversify";
 import { ResourceProvider } from "@theia/core";
 import { Workspace } from '@theia/languages/lib/common';
 import { PreviewHandler } from '../preview-handler';
+import { PREVIEW_WIDGET_CLASS } from '../preview-widget';
 import URI from "@theia/core/lib/common/uri";
 
 import * as hljs from 'highlight.js';
@@ -43,6 +44,28 @@ export class MarkdownPreviewHandler implements PreviewHandler {
             matchedElement = element;
         }
         return matchedElement;
+    }
+
+    getSourceLineForElement(selectedElement: Element): number | undefined {
+        let current: Element | null = selectedElement;
+        while (current) {
+            const parent = current.parentElement;
+            if (parent && parent.classList.contains(PREVIEW_WIDGET_CLASS)) {
+                break;
+            }
+            current = current.parentElement;
+        }
+        while (current) {
+            if (current.classList.contains('line')) {
+                break;
+            }
+            current = current.previousElementSibling;
+        }
+        if (!current) {
+            return undefined;
+        }
+        const line = Number.parseInt(current.getAttribute('data-line') || '0');
+        return line;
     }
 
     protected engine: markdownit.MarkdownIt | undefined;

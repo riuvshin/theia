@@ -7,8 +7,8 @@
 
 import { injectable, inject } from "inversify";
 import { FrontendApplicationContribution, FrontendApplication, OpenHandler, ApplicationShell } from "@theia/core/lib/browser";
-import { EDITOR_CONTEXT_MENU, EditorManager } from '@theia/editor/lib/browser';
-import { CommandContribution, CommandRegistry, Command, MenuContribution, MenuModelRegistry, CommandHandler } from "@theia/core/lib/common";
+import { EDITOR_CONTEXT_MENU, EditorManager, TextEditor } from '@theia/editor/lib/browser';
+import { CommandContribution, CommandRegistry, Command, MenuContribution, MenuModelRegistry, CommandHandler, Disposable } from "@theia/core/lib/common";
 import { DisposableCollection } from '@theia/core';
 import { WidgetManager } from '@theia/core/lib/browser/widget-manager';
 import URI from '@theia/core/lib/common/uri';
@@ -56,8 +56,9 @@ export class PreviewContribution implements CommandContribution, MenuContributio
             this.disposables.dispose();
             const editor = editorWidget.editor;
             this.disposables.push(editor.onCursorPositionChanged(position =>
-                this.syncWithCursorPosition(editor.uri.toString(), position))
+                this.synchronizeSelectionToPreview(editor, position))
             );
+            this.disposables.push(this.synchronizeSelectionToEditor(editor));
         });
     }
 
@@ -74,12 +75,27 @@ export class PreviewContribution implements CommandContribution, MenuContributio
         return this.previewWidget;
     }
 
-    protected syncWithCursorPosition(uri: string, position: Position): void {
+    protected synchronizeSelectionToPreview(editor: TextEditor, position: Position): void {
+        const uri = editor.uri.toString();
         const previewWidget = this.getPreviewWidget();
         if (!previewWidget || !previewWidget.uri || previewWidget.uri.toString() !== uri) {
             return;
         }
         previewWidget.revealForSourceLine(position.line);
+    }
+
+    protected synchronizeSelectionToEditor(editor: TextEditor): Disposable {
+        const uri = editor.uri.toString();
+        const previewWidget = this.getPreviewWidget();
+        if (!previewWidget || !previewWidget.uri || previewWidget.uri.toString() !== uri) {
+            return Disposable.NULL;
+        }
+        return previewWidget.addSelectionHandler(selectedLine => {
+            editor.revealPosition({
+                line: selectedLine,
+                character: 0
+            });
+        });
     }
 
     canHandle(uri: URI): number {
