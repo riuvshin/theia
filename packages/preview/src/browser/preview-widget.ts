@@ -60,11 +60,21 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
         this.title.closable = true;
         this.addClass(PREVIEW_WIDGET_CLASS);
         this.node.tabIndex = 0;
-        this.node.addEventListener('click', event => {
-            console.log(event.toElement);
-            this.handleClick(event.toElement);
-        });
+        this.startScrollSync();
         this.update();
+    }
+
+    protected scrollSyncTimer: number | undefined = undefined;
+    protected startScrollSync(): void {
+        this.node.addEventListener('scroll', event => {
+            if (this.scrollSyncTimer) {
+                window.clearTimeout(this.scrollSyncTimer);
+            }
+            this.scrollSyncTimer = window.setTimeout(() => {
+                const scrollTop = this.node.scrollTop;
+                this.didScroll(scrollTop);
+            }, 200);
+        });
     }
 
     onActivateRequest(msg: Message): void {
@@ -145,25 +155,37 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
         }
     }
 
-    clickHandler: ((selectedLine: number) => void) | undefined;
+    didScrollToLine: ((line: number) => void) | undefined;
+    addDidScrollToLineHandler(handler: (line: number) => void): Disposable {
+        this.didScrollToLine = handler;
+        return Disposable.create(() => {
+            this.didScrollToLine = undefined;
+        });
+    }
 
-    handleClick(element: Element): void {
+    protected didScroll(scrollTop: number): void {
         if (!this.previewHandler) {
             return;
         }
-        const line = this.previewHandler.getSourceLineForElement(element);
+        const child = this.getChildAtOffsetTop(scrollTop);
+        if (!child) {
+            return;
+        }
+        const line = this.previewHandler.getSourceLineForElement(child);
         if (!line) {
             return;
         }
-        if (this.clickHandler) {
-            this.clickHandler(line);
+        if (this.didScrollToLine) {
+            this.didScrollToLine(line);
         }
     }
 
-    addSelectionHandler(handler: (selectedLine: number) => void): Disposable {
-        this.clickHandler = handler;
-        return Disposable.create(() => {
-            this.clickHandler = undefined;
-        });
+    protected getChildAtOffsetTop(y: number): HTMLElement | undefined {
+        let child = this.node.firstElementChild as HTMLElement | null;
+        while (child && y > child.offsetTop) {
+            child = child.nextElementSibling as HTMLElement | null;
+        }
+        return child ? child : undefined;
     }
+
 }
