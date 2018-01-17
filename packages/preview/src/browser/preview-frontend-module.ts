@@ -21,7 +21,6 @@ import { PreviewWidget, PREVIEW_WIDGET_FACTORY_ID } from './preview-widget';
 import { PreviewHandler, PreviewHandlerProvider } from './preview-handler';
 import { MarkdownPreviewHandler } from './markdown';
 
-// TODO split styles into generic and specific (markdown) part
 import '../../src/browser/style/index.css';
 
 export default new ContainerModule(bind => {

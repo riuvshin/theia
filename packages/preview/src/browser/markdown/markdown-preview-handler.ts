@@ -14,11 +14,16 @@ import URI from "@theia/core/lib/common/uri";
 import * as hljs from 'highlight.js';
 import * as markdownit from 'markdown-it';
 
+import '../../../src/browser/markdown/style/index.css';
+
 @injectable()
 export class MarkdownPreviewHandler implements PreviewHandler {
 
     @inject(ResourceProvider)
     protected readonly resourceProvider: ResourceProvider;
+
+    readonly iconClass: string = 'markdown-icon file-icon';
+    readonly contentClass: string = 'markdown-preview';
 
     canHandle(uri: URI): number {
         return uri.path.ext === '.md' ? 500 : 0;

@@ -11,7 +11,8 @@ import {
 } from "inversify";
 import {
     Resource,
-    DisposableCollection
+    DisposableCollection,
+    Disposable
 } from '@theia/core';
 import {
     BaseWidget,
@@ -38,12 +39,14 @@ export const PREVIEW_WIDGET_CLASS = 'theia-preview-widget';
 
 export const PREVIEW_WIDGET_FACTORY_ID = 'preview-widget';
 
+const DEFAULT_ICON = 'fa fa-eye';
+
 @injectable()
 export class PreviewWidget extends BaseWidget implements StatefulWidget {
 
     protected resource: Resource | undefined;
     protected previewHandler: PreviewHandler | undefined;
-    protected readonly resourceDisposibles = new DisposableCollection();
+    protected readonly previewDisposables = new DisposableCollection();
     protected readonly onDidScrollEmitter = new Emitter<number>();
 
     @inject(ResourceProvider)
@@ -59,6 +62,7 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
     ) {
         super();
         this.id = 'preview';
+        this.title.iconClass = DEFAULT_ICON;
         this.title.closable = true;
         this.addClass(PREVIEW_WIDGET_CLASS);
         this.node.tabIndex = 0;
@@ -118,7 +122,7 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
 
     dispose(): void {
         super.dispose();
-        this.resourceDisposibles.dispose();
+        this.previewDisposables.dispose();
     }
 
     async start(uri: URI): Promise<void> {
@@ -126,22 +130,29 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
         if (!previewHandler) {
             return;
         }
-        this.resourceDisposibles.dispose();
+        this.previewDisposables.dispose();
         const resource = this.resource = await this.resourceProvider(uri);
-        this.resourceDisposibles.push(resource);
+        this.previewDisposables.push(resource);
         if (resource.onDidChangeContents) {
-            this.resourceDisposibles.push(resource.onDidChangeContents(() => this.update()));
+            this.previewDisposables.push(resource.onDidChangeContents(() => this.update()));
         }
         const updateIfAffected = (affectedUri?: string) => {
             if (!affectedUri || affectedUri === uri.toString()) {
                 this.update();
             }
         };
-        this.resourceDisposibles.push(this.workspace.onDidOpenTextDocument((document: TextDocument) => updateIfAffected(document.uri)));
-        this.resourceDisposibles.push(this.workspace.onDidChangeTextDocument((params: DidChangeTextDocumentParams) => updateIfAffected(params.textDocument.uri)));
-        this.resourceDisposibles.push(this.workspace.onDidCloseTextDocument((document: TextDocument) => updateIfAffected(document.uri)));
+        this.previewDisposables.push(this.workspace.onDidOpenTextDocument((document: TextDocument) => updateIfAffected(document.uri)));
+        this.previewDisposables.push(this.workspace.onDidChangeTextDocument((params: DidChangeTextDocumentParams) => updateIfAffected(params.textDocument.uri)));
+        this.previewDisposables.push(this.workspace.onDidCloseTextDocument((document: TextDocument) => updateIfAffected(document.uri)));
 
-        this.title.label = `Preview '${uri.path.base}'`;
+        const contentClass = previewHandler.contentClass;
+        this.addClass(contentClass);
+        this.previewDisposables.push(Disposable.create(() => {
+            this.removeClass(contentClass);
+        }));
+
+        this.title.label = `${uri.path.base} preview`;
+        this.title.iconClass = previewHandler.iconClass || DEFAULT_ICON;
         this.title.caption = this.title.label;
         this.title.closable = true;
         this.update();

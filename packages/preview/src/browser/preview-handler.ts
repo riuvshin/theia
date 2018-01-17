@@ -12,6 +12,8 @@ import { ContributionProvider, MaybePromise, Prioritizeable } from "@theia/core"
 export const PreviewHandler = Symbol('PreviewHandler');
 
 export interface PreviewHandler {
+    readonly iconClass?: string;
+    readonly contentClass: string;
     canHandle(uri: URI): number;
     renderHTML(content: string): MaybePromise<string | undefined>;
     findElementForSourceLine(sourceLine: number, renderedNode: Element): Element | undefined;
