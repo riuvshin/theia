@@ -7,13 +7,13 @@
 
 import { inject, injectable, named } from "inversify";
 import URI from "@theia/core/lib/common/uri";
-import { ContributionProvider } from "@theia/core";
+import { ContributionProvider, MaybePromise, Prioritizeable } from "@theia/core";
 
 export const PreviewHandler = Symbol('PreviewHandler');
 
 export interface PreviewHandler {
-    canHandle(uri: URI): boolean;
-    renderHTML(content: string): Promise<string | undefined>;
+    canHandle(uri: URI): number;
+    renderHTML(content: string): MaybePromise<string | undefined>;
     findElementForSourceLine(sourceLine: number, renderedNode: Element): Element | undefined;
     getSourceLineForElement(selectedElement: Element): number | undefined;
 }
@@ -26,13 +26,15 @@ export class PreviewHandlerProvider {
         protected readonly previewHandlerContributions: ContributionProvider<PreviewHandler>
     ) { }
 
-    get(uri: URI): PreviewHandler | undefined {
-        const previewHandlers = this.previewHandlerContributions.getContributions();
-        return previewHandlers.find(handler => handler.canHandle(uri));
+    findContribution(uri: URI): PreviewHandler[] {
+        const prioritized = Prioritizeable.prioritizeAllSync(this.previewHandlerContributions.getContributions(), contrib =>
+            contrib.canHandle(uri)
+        );
+        return prioritized.map(c => c.value);
     }
 
     canHandle(uri: URI): boolean {
-        return this.get(uri) !== undefined;
+        return this.findContribution(uri).length > 0;
     }
 
 }

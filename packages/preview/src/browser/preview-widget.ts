@@ -21,7 +21,8 @@ import {
 import URI from '@theia/core/lib/common/uri';
 import {
     ResourceProvider,
-    Disposable
+    Event,
+    Emitter
 } from '@theia/core/lib/common';
 import {
     Workspace,
@@ -43,6 +44,7 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
     protected resource: Resource | undefined;
     protected previewHandler: PreviewHandler | undefined;
     protected readonly resourceDisposibles = new DisposableCollection();
+    protected readonly onDidScrollEmitter = new Emitter<number>();
 
     @inject(ResourceProvider)
     protected readonly resourceProvider: ResourceProvider;
@@ -120,7 +122,7 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
     }
 
     async start(uri: URI): Promise<void> {
-        const previewHandler = this.previewHandler = this.previewHandlerProvider.get(uri);
+        const previewHandler = this.previewHandler = this.previewHandlerProvider.findContribution(uri)[0];
         if (!previewHandler) {
             return;
         }
@@ -159,12 +161,12 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
         }
     }
 
-    didScrollToLine: ((line: number) => void) | undefined;
-    addDidScrollToLineHandler(handler: (line: number) => void): Disposable {
-        this.didScrollToLine = handler;
-        return Disposable.create(() => {
-            this.didScrollToLine = undefined;
-        });
+    get onDidScroll(): Event<number> {
+        return this.onDidScrollEmitter.event;
+    }
+
+    protected fireDidScrollToSourceLine(line: number): void {
+        this.onDidScrollEmitter.fire(line);
     }
 
     protected didScroll(scrollTop: number): void {
@@ -179,9 +181,7 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
         if (!line) {
             return;
         }
-        if (this.didScrollToLine) {
-            this.didScrollToLine(line);
-        }
+        this.fireDidScrollToSourceLine(line);
     }
 
     protected getChildAtOffsetTop(y: number): HTMLElement | undefined {
