@@ -13,7 +13,7 @@ export const PreviewHandler = Symbol('PreviewHandler');
 
 export interface PreviewHandler {
     canHandle(uri: URI): boolean;
-    renderHTML(content: string): string;
+    renderHTML(content: string): Promise<string | undefined>;
     findElementForSourceLine(sourceLine: number, renderedNode: Element): Element | undefined;
     getSourceLineForElement(selectedElement: Element): number | undefined;
 }

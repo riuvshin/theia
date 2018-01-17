@@ -28,8 +28,8 @@ export class MarkdownPreviewHandler implements PreviewHandler {
     @inject(Workspace)
     protected readonly workspace: Workspace;
 
-    renderHTML(content: string): string {
-        return this.getEngine().render(content);
+    renderHTML(content: string): Promise<string> {
+        return Promise.resolve(this.getEngine().render(content));
     }
 
     findElementForSourceLine(sourceLine: number, renderedNode: Element): Element | undefined {

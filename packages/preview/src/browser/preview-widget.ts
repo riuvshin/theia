@@ -85,14 +85,18 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
     onUpdateRequest(msg: Message): void {
         super.onUpdateRequest(msg);
         if (this.resource) {
-            this.resource.readContents().then(contents => {
-                this.node.innerHTML = this.renderHTML(contents);
+            this.resource.readContents().then(async contents => {
+                this.node.innerHTML = await this.renderHTML(contents);
             });
         }
     }
 
-    protected renderHTML(content: string): string {
-        return (this.previewHandler) ? this.previewHandler.renderHTML(content) : '';
+    protected async renderHTML(content: string): Promise<string> {
+        if (!this.previewHandler) {
+            return '';
+        }
+        const renderedHTML = await this.previewHandler.renderHTML(content);
+        return renderedHTML || '';
     }
 
     storeState(): object {
