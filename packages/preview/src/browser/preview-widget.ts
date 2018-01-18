@@ -91,9 +91,16 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
     onUpdateRequest(msg: Message): void {
         super.onUpdateRequest(msg);
         if (this.resource) {
-            this.resource.readContents().then(async contents => {
-                this.node.innerHTML = await this.renderHTML(contents);
-            });
+            const uri = this.resource.uri;
+            const document = this.workspace.textDocuments.find(d => d.uri === uri.toString());
+            if (document) {
+                const contents = document.getText();
+                this.renderHTML(contents).then(html => this.node.innerHTML = html);
+            } else {
+                this.resource.readContents().then(async contents => {
+                    this.node.innerHTML = await this.renderHTML(contents);
+                });
+            }
         }
     }
 
