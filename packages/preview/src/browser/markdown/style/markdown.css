@@ -23,6 +23,31 @@
     box-shadow: none;
 }
 
+.markdown-preview .line {
+	position: relative;
+}
+
+.markdown-preview .line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+.markdown-preview li.line:hover:before {
+	left: -30px;
+}
+
+.markdown-preview .line:hover:before {
+	border-left: 3px solid rgba(100, 100, 100, 0.40);
+}
+
+.markdown-preview .line .line:hover:before {
+	border-left: none;
+}
+
 .markdown-preview img {
 	max-width: 100%;
 	max-height: 100%;
