@@ -106,7 +106,7 @@ export class ApplicationShell extends Widget {
     /**
      * Create the dock panel, which holds the main area for widgets organized with tabs.
      */
-    protected createMainPanel(dockPanelRenderer: DockPanelRenderer): DockPanel {
+    protected createMainPanel(dockPanelRenderer: DockLayout.IRenderer): DockPanel {
         const dockPanel = new DockPanel({ renderer: dockPanelRenderer });
         dockPanel.id = 'theia-main-content-panel';
         dockPanel.spacing = 0;
@@ -121,15 +121,15 @@ export class ApplicationShell extends Widget {
         let boxLayout: BoxLayout;
         switch (side) {
             case 'left':
-                boxLayout = this.createBoxLayout([this.leftPanelHandler.sideBar, this.leftPanelHandler.stackedPanel], [0, 1],
+                boxLayout = this.createBoxLayout([this.leftPanelHandler.sideBar, this.leftPanelHandler.dockPanel], [0, 1],
                     { direction: 'left-to-right', spacing });
                 break;
             case 'right':
-                boxLayout = this.createBoxLayout([this.rightPanelHandler.stackedPanel, this.rightPanelHandler.sideBar], [1, 0],
+                boxLayout = this.createBoxLayout([this.rightPanelHandler.dockPanel, this.rightPanelHandler.sideBar], [1, 0],
                     { direction: 'left-to-right', spacing });
                 break;
             case 'bottom':
-                boxLayout = this.createBoxLayout([this.bottomPanelHandler.sideBar, this.bottomPanelHandler.stackedPanel], [0, 1],
+                boxLayout = this.createBoxLayout([this.bottomPanelHandler.sideBar, this.bottomPanelHandler.dockPanel], [0, 1],
                     { direction: 'top-to-bottom', spacing });
                 break;
             default:
@@ -307,11 +307,11 @@ export class ApplicationShell extends Widget {
             case 'top':
                 return toArray(this.topPanel.widgets);
             case 'left':
-                return toArray(this.leftPanelHandler.stackedPanel.widgets);
+                return toArray(this.leftPanelHandler.dockPanel.widgets());
             case 'right':
-                return toArray(this.rightPanelHandler.stackedPanel.widgets);
+                return toArray(this.rightPanelHandler.dockPanel.widgets());
             case 'bottom':
-                return toArray(this.bottomPanelHandler.stackedPanel.widgets);
+                return toArray(this.bottomPanelHandler.dockPanel.widgets());
             default:
                 throw new Error('Illegal argument: ' + area);
         }

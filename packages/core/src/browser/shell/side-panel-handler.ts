@@ -6,8 +6,9 @@
  */
 
 import { injectable, inject } from 'inversify';
-import { ArrayExt, find } from '@phosphor/algorithm';
-import { StackedPanel, TabBar, Title, Widget } from '@phosphor/widgets';
+import { ArrayExt, find, map, toArray } from '@phosphor/algorithm';
+import { TabBar, Widget, DockPanel } from '@phosphor/widgets';
+import { Signal } from '@phosphor/signaling';
 import { TabBarRendererFactory, TabBarRenderer, SHELL_TABBAR_CONTEXT_MENU } from './tab-bars';
 
 /** The class name added to the main and bottom area panels. */
@@ -21,27 +22,51 @@ const COLLAPSED_CLASS = 'theia-mod-collapsed';
 export const SidePanelHandlerFactory = Symbol('SidePanelHandlerFactory');
 
 /**
- * A class which manages a stacked panel and a related side bar.
+ * A specialized dock panel for use in side bars.
+ */
+class SideDockPanel extends DockPanel {
+
+    readonly widgetAdded = new Signal<this, Widget>(this);
+    readonly widgetActivated = new Signal<this, Widget>(this);
+    readonly widgetRemoved = new Signal<this, Widget>(this);
+
+    addWidget(widget: Widget, options?: DockPanel.IAddOptions): void {
+        super.addWidget(widget, options);
+        this.widgetAdded.emit(widget);
+    }
+
+    activateWidget(widget: Widget): void {
+        super.activateWidget(widget);
+        this.widgetActivated.emit(widget);
+    }
+
+    protected onChildRemoved(msg: Widget.ChildMessage): void {
+        super.onChildRemoved(msg);
+        this.widgetRemoved.emit(msg.child);
+    }
+
+}
+
+/**
+ * A class which manages a dock panel and a related side bar.
  */
 @injectable()
 export class SidePanelHandler {
 
     @inject(TabBarRendererFactory) protected tabBarRendererFactory: () => TabBarRenderer;
 
-    private readonly items = new Array<SidePanel.StackedWidget>();
-
     protected side: 'left' | 'right' | 'bottom';
 
     sideBar: TabBar<Widget>;
-    stackedPanel: StackedPanel;
+    dockPanel: DockPanel;
 
     /**
-     * Create the side bar and stacked panel widgets.
+     * Create the side bar and dock panel widgets.
      */
     create(side: 'left' | 'right' | 'bottom') {
         this.side = side;
         const tabBarRenderer = this.tabBarRendererFactory();
-        const sideBar = this.sideBar = new TabBar<Widget>({
+        const sideBar = new TabBar<Widget>({
             orientation: side === 'left' || side === 'right' ? 'vertical' : 'horizontal',
             insertBehavior: 'none',
             removeBehavior: 'none',
@@ -59,20 +84,27 @@ export class SidePanelHandler {
         sideBar.currentChanged.connect(this.onCurrentChanged, this);
         sideBar.tabActivateRequested.connect(this.onTabActivateRequested, this);
         sideBar.tabCloseRequested.connect(this.onTabCloseRequested, this);
+        this.sideBar = sideBar;
 
-        const stackedPanel = this.stackedPanel = new StackedPanel();
-        stackedPanel.id = 'theia-' + side + '-stack';
-        stackedPanel.widgetRemoved.connect(this.onWidgetRemoved, this);
+        const dockPanel = new SideDockPanel({
+            mode: 'single-document'
+        });
+        dockPanel.id = 'theia-' + side + '-stack';
+        dockPanel.widgetAdded.connect(this.onWidgetAdded, this);
+        dockPanel.widgetActivated.connect(this.onWidgetActivated, this);
+        dockPanel.widgetRemoved.connect(this.onWidgetRemoved, this);
+        this.dockPanel = dockPanel;
 
         this.refreshVisibility();
     }
 
     getLayoutData(): SidePanel.LayoutData {
         const currentTitle = this.sideBar.currentTitle;
-        const items = this.items.map(item => <SidePanel.StackedWidget>{
-            ...item,
-            expanded: item.widget.title === currentTitle
-        });
+        const items = toArray(map(this.sideBar.titles, title => <SidePanel.WidgetItem>{
+            widget: title.owner,
+            rank: this.getRank(title.owner),
+            expanded: title === currentTitle
+        }));
         return { type: 'sidebar', items };
     }
 
@@ -92,7 +124,7 @@ export class SidePanelHandler {
     }
 
     /**
-     * Activate a widget residing in the side bar by ID.
+     * Activate a widget residing in the side panel by ID.
      *
      * @returns the activated widget if it was found
      */
@@ -105,12 +137,12 @@ export class SidePanelHandler {
     }
 
     /**
-     * Expand a widget residing in the side bar by ID.
+     * Expand a widget residing in the side panel by ID.
      *
      * @returns the expanded widget if it was found
      */
     expand(id: string): Widget | undefined {
-        const widget = this.findWidgetById(id);
+        const widget = find(this.dockPanel.widgets(), w => w.id === id);
         if (widget) {
             this.sideBar.currentTitle = widget.title;
             this.refreshVisibility();
@@ -127,82 +159,54 @@ export class SidePanelHandler {
     }
 
     /**
-     * Add a widget and its title to the stacked panel and side bar.
+     * Add a widget and its title to the dock panel and side bar.
      *
      * If the widget is already added, it will be moved.
      */
     addWidget(widget: Widget, options: SidePanel.WidgetOptions): void {
-        widget.parent = null;
-        widget.hide();
-        const item = { widget, rank: this.getRank(options) };
-        const index = ArrayExt.upperBound(this.items, item, (first, second) => first.rank - second.rank);
-        ArrayExt.insert(this.items, index, item);
-        this.stackedPanel.insertWidget(index, widget);
-        this.sideBar.insertTab(index, widget.title);
-        this.refreshVisibility();
+        if (options.rank) {
+            this.setRank(widget, options.rank);
+        }
+        this.dockPanel.addWidget(widget);
     }
 
-    protected getRank(options: SidePanel.WidgetOptions): number {
-        if (options.rank !== undefined) {
-            return options.rank;
-        }
-        if (this.items.length > 0) {
-            return this.items[this.items.length - 1].rank + 100;
-        }
-        return 100;
+    protected getRank(widget: Widget): number | undefined {
+        return (widget as any)._sidePanelRank;
+    }
+
+    private setRank(widget: Widget, rank: number): void {
+        (widget as any)._sidePanelRank = rank;
     }
 
     /**
-     * Refresh the visibility of the side bar and stacked panel.
+     * Refresh the visibility of the side bar and dock panel.
      */
     protected refreshVisibility(): void {
         const hideSideBar = this.sideBar.titles.length === 0;
-        this.sideBar.setHidden(hideSideBar);
-        const hideStack = this.sideBar.currentTitle === null;
-        this.stackedPanel.setHidden(hideStack);
-        if (this.stackedPanel.parent) {
-            this.stackedPanel.parent.setHidden(hideSideBar && hideStack);
-            if (hideStack) {
-                this.stackedPanel.parent.addClass(COLLAPSED_CLASS);
+        const currentTitle = this.sideBar.currentTitle;
+        const hideDockPanel = currentTitle === null;
+        if (this.dockPanel.parent) {
+            this.dockPanel.parent.setHidden(hideSideBar && hideDockPanel);
+            if (hideDockPanel) {
+                this.dockPanel.parent.addClass(COLLAPSED_CLASS);
             } else {
-                this.stackedPanel.parent.removeClass(COLLAPSED_CLASS);
+                this.dockPanel.parent.removeClass(COLLAPSED_CLASS);
             }
         }
-    }
-
-    /**
-     * Find the widget which owns the given title, or `undefined`.
-     */
-    protected findWidgetByTitle(title: Title<Widget> | null): Widget | undefined {
-        const item = find(this.items, value => value.widget.title === title);
-        return item ? item.widget : undefined;
-    }
-
-    /**
-     * Find the widget with the given id, or `undefined`.
-     */
-    protected findWidgetById(id: string): Widget | undefined {
-        const item = find(this.items, value => value.widget.id === id);
-        return item ? item.widget : undefined;
+        this.sideBar.setHidden(hideSideBar);
+        this.dockPanel.setHidden(hideDockPanel);
+        for (const title of this.sideBar.titles) {
+            title.owner.setHidden(title !== currentTitle);
+        }
+        if (currentTitle) {
+            this.dockPanel.selectWidget(currentTitle.owner);
+        }
     }
 
     /**
      * Handle the `currentChanged` signal from the sidebar.
      */
     protected onCurrentChanged(sender: TabBar<Widget>, args: TabBar.ICurrentChangedArgs<Widget>): void {
-        const oldWidget = this.findWidgetByTitle(args.previousTitle);
-        const newWidget = this.findWidgetByTitle(args.currentTitle);
-        if (oldWidget) {
-            oldWidget.hide();
-        }
-        if (newWidget) {
-            newWidget.show();
-        }
-        if (newWidget) {
-            document.body.setAttribute(`data-${this.side}Area`, newWidget.id);
-        } else {
-            document.body.removeAttribute(`data-${this.side}Area`);
-        }
         this.refreshVisibility();
     }
 
@@ -221,21 +225,48 @@ export class SidePanelHandler {
     }
 
     /*
-     * Handle the `widgetRemoved` signal from the stacked panel.
+     * Handle the `widgetAdded` signal from the dock panel.
      */
-    protected onWidgetRemoved(sender: StackedPanel, widget: Widget): void {
-        const items = this.items;
-        const index = ArrayExt.findFirstIndex(this.items, item => item.widget === widget);
-        ArrayExt.removeAt(items, index);
-        const shouldUpdateCurrent = this.sideBar.currentTitle === widget.title && this.side === 'bottom';
-        this.sideBar.removeTab(widget.title);
-        if (shouldUpdateCurrent) {
-            if (index < items.length) {
-                this.sideBar.currentTitle = items[index].widget.title;
-            } else if (items.length > 0) {
-                this.sideBar.currentTitle = items[items.length - 1].widget.title;
+    protected onWidgetAdded(sender: DockPanel, widget: Widget): void {
+        const rank = this.getRank(widget);
+        const titles = this.sideBar.titles;
+        let index = titles.length;
+        if (rank !== undefined) {
+            for (let i = index - 1; i >= 0; i--) {
+                const r = this.getRank(titles[i].owner);
+                if (r !== undefined && r > rank) {
+                    index = i;
+                }
             }
         }
+        this.sideBar.insertTab(index, widget.title);
+        this.refreshVisibility();
+    }
+
+    /*
+     * Handle the `widgetActivated` signal from the dock panel.
+     */
+    protected onWidgetActivated(sender: DockPanel, widget: Widget): void {
+        this.sideBar.currentTitle = widget.title;
+        this.refreshVisibility();
+    }
+
+    /*
+     * Handle the `widgetRemoved` signal from the dock panel.
+     */
+    protected onWidgetRemoved(sender: DockPanel, widget: Widget): void {
+        if (this.sideBar.currentTitle === widget.title && this.side === 'bottom') {
+            const titles = this.sideBar.titles;
+            const index = ArrayExt.findFirstIndex(titles, title => title.owner === widget);
+            if (index >= 0) {
+                if (index < titles.length - 1) {
+                    this.sideBar.currentTitle = titles[index + 1];
+                } else if (index > 0) {
+                    this.sideBar.currentTitle = titles[index - 1];
+                }
+            }
+        }
+        this.sideBar.removeTab(widget.title);
         this.refreshVisibility();
     }
 }
@@ -256,19 +287,14 @@ export namespace SidePanel {
      */
     export interface LayoutData {
         type: 'sidebar',
-        items?: StackedWidget[];
+        items?: WidgetItem[];
     }
 
     /**
-     * An object which holds a widget and its sort rank.
+     * Data structure used to save and restore the side panel layout.
      */
-    export interface StackedWidget {
+    export interface WidgetItem extends WidgetOptions {
         widget: Widget;
-
-        /**
-         * The rank order of the widget among its siblings.
-         */
-        rank: number;
 
         /**
          * Whether the widget is expanded.
