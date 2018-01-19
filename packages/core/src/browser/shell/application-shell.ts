@@ -121,15 +121,15 @@ export class ApplicationShell extends Widget {
         let boxLayout: BoxLayout;
         switch (side) {
             case 'left':
-                boxLayout = this.createBoxLayout([this.leftPanelHandler.sideBar, this.leftPanelHandler.dockPanel], [0, 1],
+                boxLayout = this.createBoxLayout([this.leftPanelHandler.tabBar, this.leftPanelHandler.dockPanel], [0, 1],
                     { direction: 'left-to-right', spacing });
                 break;
             case 'right':
-                boxLayout = this.createBoxLayout([this.rightPanelHandler.dockPanel, this.rightPanelHandler.sideBar], [1, 0],
+                boxLayout = this.createBoxLayout([this.rightPanelHandler.dockPanel, this.rightPanelHandler.tabBar], [1, 0],
                     { direction: 'left-to-right', spacing });
                 break;
             case 'bottom':
-                boxLayout = this.createBoxLayout([this.bottomPanelHandler.sideBar, this.bottomPanelHandler.dockPanel], [0, 1],
+                boxLayout = this.createBoxLayout([this.bottomPanelHandler.tabBar, this.bottomPanelHandler.dockPanel], [0, 1],
                     { direction: 'top-to-bottom', spacing });
                 break;
             default:
@@ -479,13 +479,13 @@ export class ApplicationShell extends Widget {
             if (mainPanelTabBar) {
                 return 'main';
             }
-            if (ArrayExt.firstIndexOf(this.leftPanelHandler.sideBar.titles, currentTitle) > -1) {
+            if (ArrayExt.firstIndexOf(this.leftPanelHandler.tabBar.titles, currentTitle) > -1) {
                 return 'left';
             }
-            if (ArrayExt.firstIndexOf(this.rightPanelHandler.sideBar.titles, currentTitle) > -1) {
+            if (ArrayExt.firstIndexOf(this.rightPanelHandler.tabBar.titles, currentTitle) > -1) {
                 return 'right';
             }
-            if (ArrayExt.firstIndexOf(this.bottomPanelHandler.sideBar.titles, currentTitle) > -1) {
+            if (ArrayExt.firstIndexOf(this.bottomPanelHandler.tabBar.titles, currentTitle) > -1) {
                 return 'bottom';
             }
         }
@@ -510,11 +510,11 @@ export class ApplicationShell extends Widget {
                 case 'main':
                     return this.mainPanel.tabBars().next();
                 case 'left':
-                    return this.leftPanelHandler.sideBar;
+                    return this.leftPanelHandler.tabBar;
                 case 'right':
-                    return this.rightPanelHandler.sideBar;
+                    return this.rightPanelHandler.tabBar;
                 case 'bottom':
-                    return this.bottomPanelHandler.sideBar;
+                    return this.bottomPanelHandler.tabBar;
                 default:
                     throw new Error('Illegal argument: ' + widgetOrArea);
             }
@@ -524,15 +524,15 @@ export class ApplicationShell extends Widget {
             if (mainPanelTabBar) {
                 return mainPanelTabBar;
             }
-            const leftPanelTabBar = this.leftPanelHandler.sideBar;
+            const leftPanelTabBar = this.leftPanelHandler.tabBar;
             if (ArrayExt.firstIndexOf(leftPanelTabBar.titles, widgetTitle) > -1) {
                 return leftPanelTabBar;
             }
-            const rightPanelTabBar = this.rightPanelHandler.sideBar;
+            const rightPanelTabBar = this.rightPanelHandler.tabBar;
             if (ArrayExt.firstIndexOf(rightPanelTabBar.titles, widgetTitle) > -1) {
                 return rightPanelTabBar;
             }
-            const bottomPanelTabBar = this.bottomPanelHandler.sideBar;
+            const bottomPanelTabBar = this.bottomPanelHandler.tabBar;
             if (ArrayExt.firstIndexOf(bottomPanelTabBar.titles, widgetTitle) > -1) {
                 return bottomPanelTabBar;
             }

@@ -7,9 +7,10 @@
 
 import { injectable, inject } from 'inversify';
 import { ArrayExt, find, map, toArray } from '@phosphor/algorithm';
-import { TabBar, Widget, DockPanel } from '@phosphor/widgets';
+import { TabBar, Widget, DockPanel, Title } from '@phosphor/widgets';
 import { Signal } from '@phosphor/signaling';
 import { MimeData } from '@phosphor/coreutils';
+import { ElementExt } from '@phosphor/domutils';
 import { Drag } from '@phosphor/dragdrop';
 import { AttachedProperty } from '@phosphor/properties';
 import { TabBarRendererFactory, TabBarRenderer, SHELL_TABBAR_CONTEXT_MENU } from './tab-bars';
@@ -30,35 +31,6 @@ const rankProperty = new AttachedProperty<Widget, number | undefined>({
 });
 
 /**
- * A specialized dock panel for use in side bars.
- */
-class SideDockPanel extends DockPanel {
-
-    readonly widgetAdded = new Signal<this, Widget>(this);
-    readonly widgetActivated = new Signal<this, Widget>(this);
-    readonly widgetRemoved = new Signal<this, Widget>(this);
-
-    addWidget(widget: Widget, options?: DockPanel.IAddOptions): void {
-        if (widget.parent === this) {
-            return;
-        }
-        super.addWidget(widget, options);
-        this.widgetAdded.emit(widget);
-    }
-
-    activateWidget(widget: Widget): void {
-        super.activateWidget(widget);
-        this.widgetActivated.emit(widget);
-    }
-
-    protected onChildRemoved(msg: Widget.ChildMessage): void {
-        super.onChildRemoved(msg);
-        this.widgetRemoved.emit(msg.child);
-    }
-
-}
-
-/**
  * A class which manages a dock panel and a related side bar.
  */
 @injectable()
@@ -68,16 +40,23 @@ export class SidePanelHandler {
 
     protected side: 'left' | 'right' | 'bottom';
 
-    sideBar: TabBar<Widget>;
-    dockPanel: DockPanel;
+    tabBar: SideTabBar;
+    dockPanel: SideDockPanel;
 
     /**
      * Create the side bar and dock panel widgets.
      */
-    create(side: 'left' | 'right' | 'bottom') {
+    create(side: 'left' | 'right' | 'bottom'): void {
         this.side = side;
+        this.tabBar = this.createSideBar(side);
+        this.dockPanel = this.createSidePanel(side);
+
+        this.refreshVisibility();
+    }
+
+    protected createSideBar(side: 'left' | 'right' | 'bottom'): SideTabBar {
         const tabBarRenderer = this.tabBarRendererFactory();
-        const sideBar = new TabBar<Widget>({
+        const sideBar = new SideTabBar({
             orientation: side === 'left' || side === 'right' ? 'vertical' : 'horizontal',
             insertBehavior: 'none',
             removeBehavior: 'none',
@@ -87,33 +66,36 @@ export class SidePanelHandler {
         });
         tabBarRenderer.tabBar = sideBar;
         tabBarRenderer.contextMenuPath = SHELL_TABBAR_CONTEXT_MENU;
+
         sideBar.addClass('theia-app-' + side);
         if (side === 'left' || side === 'right') {
             sideBar.addClass(LEFT_RIGHT_AREA_CLASS);
         } else {
             sideBar.addClass(MAIN_BOTTOM_AREA_CLASS);
         }
+
         sideBar.currentChanged.connect(this.onCurrentTabChanged, this);
         sideBar.tabActivateRequested.connect(this.onTabActivateRequested, this);
         sideBar.tabCloseRequested.connect(this.onTabCloseRequested, this);
         sideBar.tabDetachRequested.connect(this.onTabDetachRequested, this);
-        this.sideBar = sideBar;
+        sideBar.collapseRequested.connect(this.onCollapseRequested, this);
+        return sideBar;
+    }
 
-        const dockPanel = new SideDockPanel({
+    protected createSidePanel(side: 'left' | 'right' | 'bottom'): SideDockPanel {
+        const sidePanel = new SideDockPanel({
             mode: 'single-document'
         });
-        dockPanel.id = 'theia-' + side + '-stack';
-        dockPanel.widgetAdded.connect(this.onWidgetAdded, this);
-        dockPanel.widgetActivated.connect(this.onWidgetActivated, this);
-        dockPanel.widgetRemoved.connect(this.onWidgetRemoved, this);
-        this.dockPanel = dockPanel;
-
-        this.refreshVisibility();
+        sidePanel.id = 'theia-' + side + '-stack';
+        sidePanel.widgetAdded.connect(this.onWidgetAdded, this);
+        sidePanel.widgetActivated.connect(this.onWidgetActivated, this);
+        sidePanel.widgetRemoved.connect(this.onWidgetRemoved, this);
+        return sidePanel;
     }
 
     getLayoutData(): SidePanel.LayoutData {
-        const currentTitle = this.sideBar.currentTitle;
-        const items = toArray(map(this.sideBar.titles, title => <SidePanel.WidgetItem>{
+        const currentTitle = this.tabBar.currentTitle;
+        const items = toArray(map(this.tabBar.titles, title => <SidePanel.WidgetItem>{
             widget: title.owner,
             rank: rankProperty.get(title.owner),
             expanded: title === currentTitle
@@ -122,13 +104,13 @@ export class SidePanelHandler {
     }
 
     setLayoutData(layoutData: SidePanel.LayoutData) {
-        this.sideBar.currentTitle = null;
+        this.tabBar.currentTitle = null;
         if (layoutData.items) {
             for (const item of layoutData.items) {
                 if (item.widget) {
                     this.addWidget(item.widget, item);
                     if (item.expanded) {
-                        this.sideBar.currentTitle = item.widget.title;
+                        this.tabBar.currentTitle = item.widget.title;
                     }
                 }
             }
@@ -157,7 +139,7 @@ export class SidePanelHandler {
     expand(id: string): Widget | undefined {
         const widget = find(this.dockPanel.widgets(), w => w.id === id);
         if (widget) {
-            this.sideBar.currentTitle = widget.title;
+            this.tabBar.currentTitle = widget.title;
             this.refreshVisibility();
         }
         return widget;
@@ -167,7 +149,7 @@ export class SidePanelHandler {
      * Collapse the sidebar so no items are expanded.
      */
     collapse(): void {
-        this.sideBar.currentTitle = null;
+        this.tabBar.currentTitle = null;
         this.refreshVisibility();
     }
 
@@ -187,8 +169,8 @@ export class SidePanelHandler {
      * Refresh the visibility of the side bar and dock panel.
      */
     protected refreshVisibility(): void {
-        const hideSideBar = this.sideBar.titles.length === 0;
-        const currentTitle = this.sideBar.currentTitle;
+        const hideSideBar = this.tabBar.titles.length === 0;
+        const currentTitle = this.tabBar.currentTitle;
         const hideDockPanel = currentTitle === null;
         if (this.dockPanel.parent) {
             this.dockPanel.parent.setHidden(hideSideBar && hideDockPanel);
@@ -198,7 +180,7 @@ export class SidePanelHandler {
                 this.dockPanel.parent.removeClass(COLLAPSED_CLASS);
             }
         }
-        this.sideBar.setHidden(hideSideBar);
+        this.tabBar.setHidden(hideSideBar);
         this.dockPanel.setHidden(hideDockPanel);
         if (currentTitle) {
             this.dockPanel.selectWidget(currentTitle.owner);
@@ -206,31 +188,35 @@ export class SidePanelHandler {
     }
 
     /**
-     * Handle the `currentChanged` signal from the sidebar.
+     * Handle a `currentChanged` signal from the sidebar.
      */
-    protected onCurrentTabChanged(sender: TabBar<Widget>, args: TabBar.ICurrentChangedArgs<Widget>): void {
+    protected onCurrentTabChanged(sender: SideTabBar, args: TabBar.ICurrentChangedArgs<Widget>): void {
         this.refreshVisibility();
     }
 
     /**
-     * Handle a `tabActivateRequest` signal from the sidebar.
+     * Handle a `tabActivateRequested` signal from the sidebar.
      */
-    protected onTabActivateRequested(sender: TabBar<Widget>, { title }: TabBar.ITabActivateRequestedArgs<Widget>): void {
+    protected onTabActivateRequested(sender: SideTabBar, { title }: TabBar.ITabActivateRequestedArgs<Widget>): void {
         title.owner.activate();
     }
 
     /**
-     * Handle a `tabCloseRequest` signal from the sidebar.
+     * Handle a `tabCloseRequested` signal from the sidebar.
      */
-    protected onTabCloseRequested(sender: TabBar<Widget>, { title }: TabBar.ITabCloseRequestedArgs<Widget>): void {
+    protected onTabCloseRequested(sender: SideTabBar, { title }: TabBar.ITabCloseRequestedArgs<Widget>): void {
         title.owner.close();
     }
 
-    protected onTabDetachRequested(sender: TabBar<Widget>,
+    /**
+     * Handle a `tabDetachRequested` signal from the sidebar.
+     */
+    protected onTabDetachRequested(sender: SideTabBar,
         { title, tab, clientX, clientY }: TabBar.ITabDetachRequestedArgs<Widget>): void {
         // Release the tab bar's hold on the mouse
         sender.releaseMouse();
 
+        // Create and start a drag to move the selected tab to another panel
         const mimeData = new MimeData();
         mimeData.setData('application/vnd.phosphor.widget-factory', () => title.owner);
         const drag = new Drag({
@@ -246,12 +232,19 @@ export class SidePanelHandler {
         });
     }
 
+    /**
+     * Handle a `collapseRequested` signal from the sidebar.
+     */
+    protected onCollapseRequested(sender: SideTabBar, title: Title<Widget>): void {
+        this.collapse();
+    }
+
     /*
      * Handle the `widgetAdded` signal from the dock panel.
      */
     protected onWidgetAdded(sender: DockPanel, widget: Widget): void {
         const rank = rankProperty.get(widget);
-        const titles = this.sideBar.titles;
+        const titles = this.tabBar.titles;
         let index = titles.length;
         if (rank !== undefined) {
             for (let i = index - 1; i >= 0; i--) {
@@ -261,7 +254,7 @@ export class SidePanelHandler {
                 }
             }
         }
-        this.sideBar.insertTab(index, widget.title);
+        this.tabBar.insertTab(index, widget.title);
         this.refreshVisibility();
     }
 
@@ -269,7 +262,7 @@ export class SidePanelHandler {
      * Handle the `widgetActivated` signal from the dock panel.
      */
     protected onWidgetActivated(sender: DockPanel, widget: Widget): void {
-        this.sideBar.currentTitle = widget.title;
+        this.tabBar.currentTitle = widget.title;
         this.refreshVisibility();
     }
 
@@ -277,18 +270,18 @@ export class SidePanelHandler {
      * Handle the `widgetRemoved` signal from the dock panel.
      */
     protected onWidgetRemoved(sender: DockPanel, widget: Widget): void {
-        if (this.sideBar.currentTitle === widget.title && this.side === 'bottom') {
-            const titles = this.sideBar.titles;
+        if (this.tabBar.currentTitle === widget.title && this.side === 'bottom') {
+            const titles = this.tabBar.titles;
             const index = ArrayExt.findFirstIndex(titles, title => title.owner === widget);
             if (index >= 0) {
                 if (index < titles.length - 1) {
-                    this.sideBar.currentTitle = titles[index + 1];
+                    this.tabBar.currentTitle = titles[index + 1];
                 } else if (index > 0) {
-                    this.sideBar.currentTitle = titles[index - 1];
+                    this.tabBar.currentTitle = titles[index - 1];
                 }
             }
         }
-        this.sideBar.removeTab(widget.title);
+        this.tabBar.removeTab(widget.title);
         this.refreshVisibility();
     }
 }
@@ -323,4 +316,113 @@ export namespace SidePanel {
          */
         expanded?: boolean;
     }
+}
+
+/**
+ * A specialized dock panel for side areas.
+ */
+export class SideDockPanel extends DockPanel {
+
+    readonly widgetAdded = new Signal<this, Widget>(this);
+    readonly widgetActivated = new Signal<this, Widget>(this);
+    readonly widgetRemoved = new Signal<this, Widget>(this);
+
+    addWidget(widget: Widget, options?: DockPanel.IAddOptions): void {
+        if (widget.parent === this) {
+            return;
+        }
+        super.addWidget(widget, options);
+        this.widgetAdded.emit(widget);
+    }
+
+    activateWidget(widget: Widget): void {
+        super.activateWidget(widget);
+        this.widgetActivated.emit(widget);
+    }
+
+    protected onChildRemoved(msg: Widget.ChildMessage): void {
+        super.onChildRemoved(msg);
+        this.widgetRemoved.emit(msg.child);
+    }
+
+}
+
+/**
+ * A specialized tab bar for side areas.
+ */
+export class SideTabBar extends TabBar<Widget> {
+
+    readonly collapseRequested = new Signal<this, Title<Widget>>(this);
+
+    private mouseDownTabIndex = -1;
+
+    handleEvent(event: Event): void {
+        switch (event.type) {
+            case 'mousedown':
+                this.onMouseDown(event as MouseEvent);
+                super.handleEvent(event);
+                break;
+            case 'mouseup':
+                super.handleEvent(event);
+                this.onMouseUp(event as MouseEvent);
+                break;
+            case 'mousemove':
+                this.onMouseMove(event as MouseEvent);
+                super.handleEvent(event);
+                break;
+            default:
+                super.handleEvent(event);
+        }
+    }
+
+    private onMouseDown(event: MouseEvent): void {
+        // Check for left mouse button and current drag status
+        if (event.button !== 0 || (this as any)._dragData) {
+            return;
+        }
+
+        // Check whether the mouse went down on the current tab
+        const tabs = this.contentNode.children;
+        const index = ArrayExt.findFirstIndex(tabs, tab => ElementExt.hitTest(tab, event.clientX, event.clientY));
+        if (index !== this.currentIndex) {
+            return;
+        }
+
+        // Check whether the close button was clicked
+        const icon = tabs[index].querySelector(this.renderer.closeIconSelector);
+        if (icon && icon.contains(event.target as HTMLElement)) {
+            return;
+        }
+
+        this.mouseDownTabIndex = index;
+    }
+
+    private onMouseUp(event: MouseEvent): void {
+        // Check for left mouse button
+        if (event.button !== 0) {
+            return;
+        }
+
+        // Check whether the mouse went up on the current tab
+        const mouseDownTabIndex = this.mouseDownTabIndex;
+        this.mouseDownTabIndex = -1;
+        const tabs = this.contentNode.children;
+        const index = ArrayExt.findFirstIndex(tabs, tab => ElementExt.hitTest(tab, event.clientX, event.clientY));
+        if (index < 0 || index !== mouseDownTabIndex) {
+            return;
+        }
+
+        // Collapse the side bar
+        this.collapseRequested.emit(this.titles[index]);
+    }
+
+    private onMouseMove(event: MouseEvent): void {
+        // Check for left mouse button
+        if (event.button !== 0) {
+            return;
+        }
+
+        this.mouseDownTabIndex = -1;
+    }
+
 }
