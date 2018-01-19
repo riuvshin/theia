@@ -22,6 +22,7 @@ import { PreviewHandler, PreviewHandlerProvider } from './preview-handler';
 import { MarkdownPreviewHandler } from './markdown';
 
 import '../../src/browser/style/index.css';
+import '../../src/browser/markdown/style/index.css';
 
 export default new ContainerModule(bind => {
     bind(PreviewHandlerProvider).toSelf().inSingletonScope();

@@ -5,21 +5,15 @@
  * You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
  */
 
-import { inject, injectable } from "inversify";
-import { ResourceProvider } from "@theia/core";
+import { injectable } from "inversify";
 import { PreviewHandler } from '../preview-handler';
 import URI from "@theia/core/lib/common/uri";
 
 import * as hljs from 'highlight.js';
 import * as markdownit from 'markdown-it';
 
-import '../../../src/browser/markdown/style/index.css';
-
 @injectable()
 export class MarkdownPreviewHandler implements PreviewHandler {
-
-    @inject(ResourceProvider)
-    protected readonly resourceProvider: ResourceProvider;
 
     readonly iconClass: string = 'markdown-icon file-icon';
     readonly contentClass: string = 'markdown-preview';
@@ -47,10 +41,44 @@ export class MarkdownPreviewHandler implements PreviewHandler {
     }
 
     getSourceLineForOffset(content: HTMLElement, offset: number): number | undefined {
+        const lineElements = this.getLineElementsAtOffset(content, offset);
+        if (lineElements.length < 1) {
+            return undefined;
+        }
+        const firstLineNumber = this.getLineNumberFromAttribute(lineElements[0]);
+        const secondLineNumber = this.getLineNumberFromAttribute(lineElements[1]);
+        if (firstLineNumber === undefined) {
+            return undefined;
+        }
+        if (lineElements.length === 1) {
+            return firstLineNumber;
+        }
+        if (secondLineNumber === undefined) {
+            return firstLineNumber;
+        }
+        const y1 = lineElements[0].offsetTop;
+        const y2 = lineElements[1].offsetTop;
+        const dY = (offset - y1) / (y2 - y1);
+        const dL = (secondLineNumber - firstLineNumber) * dY;
+        const line = firstLineNumber + Math.floor(dL);
+        return line;
+    }
+
+    /**
+     * returns two significant line elements for the given offset.
+     */
+    protected getLineElementsAtOffset(content: HTMLElement, offset: number): HTMLElement[] {
+        let skipNext = false;
         const filter: NodeFilter = {
             acceptNode: (node: Node) => {
                 if (node instanceof HTMLElement) {
                     if (node.classList.contains('line')) {
+                        if (skipNext) {
+                            return NodeFilter.FILTER_SKIP;
+                        }
+                        if (node.offsetTop > offset) {
+                            skipNext = true;
+                        }
                         return NodeFilter.FILTER_ACCEPT;
                     }
                     return NodeFilter.FILTER_SKIP;
@@ -59,20 +87,17 @@ export class MarkdownPreviewHandler implements PreviewHandler {
             }
         };
         const treeWalker = document.createTreeWalker(content, NodeFilter.SHOW_ELEMENT, filter, false);
-        let lastElement: HTMLElement | undefined = undefined;
+        const lineElements: HTMLElement[] = [];
         while (treeWalker.nextNode()) {
-            const current = treeWalker.currentNode as HTMLElement;
-            const offsetTop = current.offsetTop;
-            if (offsetTop > offset) {
-                break;
-            }
-            lastElement = current;
+            const element = treeWalker.currentNode as HTMLElement;
+            lineElements.push(element);
         }
-        if (!lastElement) {
-            return undefined;
-        }
-        const line = Number.parseInt(lastElement.getAttribute('data-line') || '0');
-        return line;
+        return lineElements.slice(-2);
+    }
+
+    protected getLineNumberFromAttribute(element: HTMLElement): number | undefined {
+        const attribute = element.getAttribute('data-line');
+        return attribute ? Number.parseInt(attribute) : undefined;
     }
 
     protected engine: markdownit.MarkdownIt | undefined;
