@@ -14,6 +14,7 @@ import { WidgetManager } from '@theia/core/lib/browser/widget-manager';
 import URI from '@theia/core/lib/common/uri';
 import { Position } from 'vscode-languageserver-types';
 import { PreviewWidget, PREVIEW_WIDGET_FACTORY_ID } from './preview-widget';
+import { PreviewWidgetManager } from './preview-widget-manager';
 import { PreviewHandlerProvider } from './preview-handler';
 
 export namespace PreviewCommands {
@@ -29,9 +30,6 @@ export class PreviewContribution implements CommandContribution, MenuContributio
     readonly id = 'preview';
     readonly label = 'Preview';
 
-    protected readonly editorDisposables = new DisposableCollection();
-    protected readonly previewDisposables = new DisposableCollection();
-
     @inject(FrontendApplication)
     protected readonly app: FrontendApplication;
 
@@ -44,47 +42,59 @@ export class PreviewContribution implements CommandContribution, MenuContributio
     @inject(PreviewHandlerProvider)
     protected readonly previewHandlerProvider: PreviewHandlerProvider;
 
-    onStart() {
-        this.syncWithCurrentEditor();
-    }
+    @inject(PreviewWidgetManager)
+    protected readonly previewWidgetManager: PreviewWidgetManager;
 
-    protected async syncWithCurrentEditor(): Promise<void> {
-        this.editorManager.onCurrentEditorChanged(async editorWidget => {
-            if (!editorWidget) {
-                return;
-            }
-            this.editorDisposables.dispose();
-            const editor = editorWidget.editor;
-            this.editorDisposables.push(editor.onCursorPositionChanged(position =>
-                this.synchronizeSelectionToPreview(editor, position))
-            );
-            const previewWidget = this.getPreviewWidget();
-            if (previewWidget) {
-                this.editorDisposables.push(this.synchronizeSelectionToEditor(previewWidget, editor));
+    protected readonly syncronizedUris = new Set<string>();
+
+    onStart() {
+        this.previewWidgetManager.onWidgetCreated(uri => {
+            this.registerOpenOnDoubleClick(uri);
+            this.registerLinkNavigation(uri);
+            this.registerEditorAndPreviewSync(uri, 'preview');
+        });
+        this.editorManager.onActiveEditorChanged(editorWidget => {
+            if (editorWidget) {
+                this.registerEditorAndPreviewSync(editorWidget.editor.uri.toString(), 'editor');
             }
         });
     }
 
-    protected getPreviewWidget(): PreviewWidget | undefined {
-        // note: this also ensures, we get resotored widgets
-        const previewWidget = this.widgetManager.getWidgets(PREVIEW_WIDGET_FACTORY_ID).slice(-1)[0] as PreviewWidget;
-        return previewWidget;
-    }
-
-    protected synchronizeSelectionToPreview(editor: TextEditor, position: Position): void {
-        const uri = editor.uri.toString();
-        const previewWidget = this.getPreviewWidget();
-        if (!previewWidget || !previewWidget.uri || previewWidget.uri.toString() !== uri) {
+    protected async registerEditorAndPreviewSync(uri: string, eventSource: 'preview' | 'editor'): Promise<void> {
+        const previewWidget = this.previewWidgetManager.get(uri);
+        const editorWidget = this.editorManager.editors.find(widget => widget.editor.uri.toString() === uri);
+        if (!previewWidget || !editorWidget) {
             return;
         }
+        if (this.syncronizedUris.has(uri)) {
+            return;
+        }
+        const syncDisposables = new DisposableCollection();
+        const editor = editorWidget.editor;
+        syncDisposables.push(editor.onCursorPositionChanged(position =>
+            this.revealSourceLineInPreview(previewWidget, position))
+        );
+        syncDisposables.push(this.synchronizeScrollToEditor(previewWidget, editor));
+        if (eventSource === 'preview') {
+            window.setTimeout(() => {
+                this.revealSourceLineInPreview(previewWidget, editor.cursor);
+            }, 100);
+        }
+        previewWidget.disposed.connect(() => {
+            syncDisposables.dispose();
+        });
+        editorWidget.disposed.connect(() => {
+            syncDisposables.dispose();
+        });
+        syncDisposables.push(Disposable.create(() => this.syncronizedUris.delete(uri)));
+        this.syncronizedUris.add(uri);
+    }
+
+    protected revealSourceLineInPreview(previewWidget: PreviewWidget, position: Position): void {
         previewWidget.revealForSourceLine(position.line);
     }
 
-    protected synchronizeSelectionToEditor(previewWidget: PreviewWidget, editor: TextEditor): Disposable {
-        const uri = editor.uri.toString();
-        if (!previewWidget.uri || previewWidget.uri.toString() !== uri) {
-            return Disposable.NULL;
-        }
+    protected synchronizeScrollToEditor(previewWidget: PreviewWidget, editor: TextEditor): Disposable {
         return previewWidget.onDidScroll(sourceLine => {
             const line = Math.floor(sourceLine);
             editor.revealRange({
@@ -103,8 +113,12 @@ export class PreviewContribution implements CommandContribution, MenuContributio
         });
     }
 
-    protected registerOpenOnDoubleClick(previewWidget: PreviewWidget): Disposable {
-        return previewWidget.onDidDoubleClick(location => {
+    protected registerOpenOnDoubleClick(uri: string): void {
+        const previewWidget = this.previewWidgetManager.get(uri);
+        if (!previewWidget) {
+            return;
+        }
+        const disposable = previewWidget.onDidDoubleClick(location => {
             this.editorManager.open(new URI(location.uri))
                 .then(widget => {
                     if (widget) {
@@ -117,15 +131,21 @@ export class PreviewContribution implements CommandContribution, MenuContributio
                     }
                 });
         });
+        previewWidget.disposed.connect(() => disposable.dispose());
     }
 
     canHandle(uri: URI): number {
         return (this.previewHandlerProvider.canHandle(uri)) ? 50 : 0;
     }
 
-    async open(uri: URI, options: ApplicationShell.WidgetOptions = { area: 'main', mode: 'tab-after' }): Promise<PreviewWidget> {
-        const previewWidget = await this.getOrCreateWidget(uri, options);
-        this.app.shell.activateWidget(previewWidget.id);
+    async open(uri: URI, options: ApplicationShell.WidgetOptions = { area: 'main', mode: 'tab-after' }, activate: boolean = true): Promise<PreviewWidget> {
+        const previewWidget = <PreviewWidget>await this.widgetManager.getOrCreateWidget(PREVIEW_WIDGET_FACTORY_ID, uri.toString());
+        if (!previewWidget.isAttached) {
+            this.app.shell.addWidget(previewWidget, options);
+        }
+        if (activate) {
+            this.app.shell.activateWidget(previewWidget.id);
+        }
         await previewWidget.start(uri);
         return previewWidget;
     }
@@ -169,26 +189,7 @@ export class PreviewContribution implements CommandContribution, MenuContributio
         }
         const editor = editorWidget.editor;
         const uri = editor.uri;
-        this.open(uri, { area: 'main', mode: 'split-right' }).then(previewWidget => {
-            window.setTimeout(() => {
-                this.synchronizeSelectionToPreview(editor, editor.cursor);
-                this.synchronizeSelectionToEditor(previewWidget, editor);
-            }, 100);
-        });
-    }
-
-    protected async getOrCreateWidget(uri: URI, options: ApplicationShell.WidgetOptions): Promise<PreviewWidget> {
-        let previewWidget = this.getPreviewWidget();
-        if (!previewWidget) {
-            previewWidget = <PreviewWidget>await this.widgetManager.getOrCreateWidget(PREVIEW_WIDGET_FACTORY_ID);
-            this.app.shell.addWidget(previewWidget, options);
-        }
-        return previewWidget;
-    }
-
-    preparePreviewWidget(widget: PreviewWidget): void {
-        this.previewDisposables.dispose();
-        this.previewDisposables.push(this.registerOpenOnDoubleClick(widget));
+        this.open(uri, { area: 'main', mode: 'split-right' }, false);
     }
 
 }

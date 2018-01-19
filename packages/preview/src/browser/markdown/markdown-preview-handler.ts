@@ -46,13 +46,13 @@ export class MarkdownPreviewHandler implements PreviewHandler {
             return undefined;
         }
         const firstLineNumber = this.getLineNumberFromAttribute(lineElements[0]);
-        const secondLineNumber = this.getLineNumberFromAttribute(lineElements[1]);
         if (firstLineNumber === undefined) {
             return undefined;
         }
         if (lineElements.length === 1) {
             return firstLineNumber;
         }
+        const secondLineNumber = this.getLineNumberFromAttribute(lineElements[1]);
         if (secondLineNumber === undefined) {
             return firstLineNumber;
         }
