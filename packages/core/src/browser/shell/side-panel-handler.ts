@@ -9,6 +9,9 @@ import { injectable, inject } from 'inversify';
 import { ArrayExt, find, map, toArray } from '@phosphor/algorithm';
 import { TabBar, Widget, DockPanel } from '@phosphor/widgets';
 import { Signal } from '@phosphor/signaling';
+import { MimeData } from '@phosphor/coreutils';
+import { Drag } from '@phosphor/dragdrop';
+import { AttachedProperty } from '@phosphor/properties';
 import { TabBarRendererFactory, TabBarRenderer, SHELL_TABBAR_CONTEXT_MENU } from './tab-bars';
 
 /** The class name added to the main and bottom area panels. */
@@ -21,6 +24,11 @@ const COLLAPSED_CLASS = 'theia-mod-collapsed';
 
 export const SidePanelHandlerFactory = Symbol('SidePanelHandlerFactory');
 
+const rankProperty = new AttachedProperty<Widget, number | undefined>({
+    name: 'sidePanelRank',
+    create: () => undefined
+});
+
 /**
  * A specialized dock panel for use in side bars.
  */
@@ -31,6 +39,9 @@ class SideDockPanel extends DockPanel {
     readonly widgetRemoved = new Signal<this, Widget>(this);
 
     addWidget(widget: Widget, options?: DockPanel.IAddOptions): void {
+        if (widget.parent === this) {
+            return;
+        }
         super.addWidget(widget, options);
         this.widgetAdded.emit(widget);
     }
@@ -70,7 +81,8 @@ export class SidePanelHandler {
             orientation: side === 'left' || side === 'right' ? 'vertical' : 'horizontal',
             insertBehavior: 'none',
             removeBehavior: 'none',
-            allowDeselect: true,
+            allowDeselect: false,
+            tabsMovable: true,
             renderer: tabBarRenderer
         });
         tabBarRenderer.tabBar = sideBar;
@@ -81,9 +93,10 @@ export class SidePanelHandler {
         } else {
             sideBar.addClass(MAIN_BOTTOM_AREA_CLASS);
         }
-        sideBar.currentChanged.connect(this.onCurrentChanged, this);
+        sideBar.currentChanged.connect(this.onCurrentTabChanged, this);
         sideBar.tabActivateRequested.connect(this.onTabActivateRequested, this);
         sideBar.tabCloseRequested.connect(this.onTabCloseRequested, this);
+        sideBar.tabDetachRequested.connect(this.onTabDetachRequested, this);
         this.sideBar = sideBar;
 
         const dockPanel = new SideDockPanel({
@@ -102,7 +115,7 @@ export class SidePanelHandler {
         const currentTitle = this.sideBar.currentTitle;
         const items = toArray(map(this.sideBar.titles, title => <SidePanel.WidgetItem>{
             widget: title.owner,
-            rank: this.getRank(title.owner),
+            rank: rankProperty.get(title.owner),
             expanded: title === currentTitle
         }));
         return { type: 'sidebar', items };
@@ -165,17 +178,9 @@ export class SidePanelHandler {
      */
     addWidget(widget: Widget, options: SidePanel.WidgetOptions): void {
         if (options.rank) {
-            this.setRank(widget, options.rank);
+            rankProperty.set(widget, options.rank);
         }
         this.dockPanel.addWidget(widget);
-    }
-
-    protected getRank(widget: Widget): number | undefined {
-        return (widget as any)._sidePanelRank;
-    }
-
-    private setRank(widget: Widget, rank: number): void {
-        (widget as any)._sidePanelRank = rank;
     }
 
     /**
@@ -195,9 +200,6 @@ export class SidePanelHandler {
         }
         this.sideBar.setHidden(hideSideBar);
         this.dockPanel.setHidden(hideDockPanel);
-        for (const title of this.sideBar.titles) {
-            title.owner.setHidden(title !== currentTitle);
-        }
         if (currentTitle) {
             this.dockPanel.selectWidget(currentTitle.owner);
         }
@@ -206,34 +208,54 @@ export class SidePanelHandler {
     /**
      * Handle the `currentChanged` signal from the sidebar.
      */
-    protected onCurrentChanged(sender: TabBar<Widget>, args: TabBar.ICurrentChangedArgs<Widget>): void {
+    protected onCurrentTabChanged(sender: TabBar<Widget>, args: TabBar.ICurrentChangedArgs<Widget>): void {
         this.refreshVisibility();
     }
 
     /**
      * Handle a `tabActivateRequest` signal from the sidebar.
      */
-    protected onTabActivateRequested(sender: TabBar<Widget>, args: TabBar.ITabActivateRequestedArgs<Widget>): void {
-        args.title.owner.activate();
+    protected onTabActivateRequested(sender: TabBar<Widget>, { title }: TabBar.ITabActivateRequestedArgs<Widget>): void {
+        title.owner.activate();
     }
 
     /**
      * Handle a `tabCloseRequest` signal from the sidebar.
      */
-    protected onTabCloseRequested(sender: TabBar<Widget>, args: TabBar.ITabCloseRequestedArgs<Widget>): void {
-        args.title.owner.close();
+    protected onTabCloseRequested(sender: TabBar<Widget>, { title }: TabBar.ITabCloseRequestedArgs<Widget>): void {
+        title.owner.close();
+    }
+
+    protected onTabDetachRequested(sender: TabBar<Widget>,
+        { title, tab, clientX, clientY }: TabBar.ITabDetachRequestedArgs<Widget>): void {
+        // Release the tab bar's hold on the mouse
+        sender.releaseMouse();
+
+        const mimeData = new MimeData();
+        mimeData.setData('application/vnd.phosphor.widget-factory', () => title.owner);
+        const drag = new Drag({
+            mimeData,
+            dragImage: tab.cloneNode(true) as HTMLElement,
+            proposedAction: 'move',
+            supportedActions: 'move',
+        });
+
+        tab.classList.add('p-mod-hidden');
+        drag.start(clientX, clientY).then(() => {
+            tab.classList.remove('p-mod-hidden');
+        });
     }
 
     /*
      * Handle the `widgetAdded` signal from the dock panel.
      */
     protected onWidgetAdded(sender: DockPanel, widget: Widget): void {
-        const rank = this.getRank(widget);
+        const rank = rankProperty.get(widget);
         const titles = this.sideBar.titles;
         let index = titles.length;
         if (rank !== undefined) {
             for (let i = index - 1; i >= 0; i--) {
-                const r = this.getRank(titles[i].owner);
+                const r = rankProperty.get(titles[i].owner);
                 if (r !== undefined && r > rank) {
                     index = i;
                 }
