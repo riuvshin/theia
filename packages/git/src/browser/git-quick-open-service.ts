@@ -8,7 +8,7 @@
 import { injectable, inject } from "inversify";
 import { QuickOpenItem, QuickOpenMode, QuickOpenModel } from '@theia/core/lib/browser/quick-open/quick-open-model';
 import { QuickOpenService, QuickOpenOptions } from '@theia/core/lib/browser/quick-open/quick-open-service';
-import { Git, Repository, Branch, BranchType } from '../common';
+import { Git, Repository, Branch, BranchType, Tag } from '../common';
 import { GitRepositoryProvider } from './git-repository-provider';
 import { MessageService } from '@theia/core/lib/common/message-service';
 
@@ -175,14 +175,16 @@ export class GitQuickOpenService {
     async chooseTagsAndBranches(execFunc: (branchName: string, currentBranchName: string) => void): Promise<void> {
         const repository = this.getRepository();
         if (repository) {
-            const [branches, currentBranch] = await Promise.all([this.getBranches(), this.getCurrentBranch()]);
-            const execute = async (item: GitQuickOpenItem<Branch>) => {
+            const [branches, tags, currentBranch] = await Promise.all([this.getBranches(), this.getTags(), this.getCurrentBranch()]);
+            const execute = async (item: GitQuickOpenItem<Branch | Tag>) => {
                 execFunc(item.ref.name, currentBranch ? currentBranch.name : '');
             };
-            const toLabel = (item: GitQuickOpenItem<Branch>) => item.ref.name;
-            const items = branches.map(branch => new GitQuickOpenItem(branch, execute, toLabel));
+            const toLabel = (item: GitQuickOpenItem<Branch | Tag>) => item.ref.name;
+            const branchItems = branches.map(branch => new GitQuickOpenItem(branch, execute, toLabel));
             const branchName = currentBranch ? `'${currentBranch.name}' ` : '';
-            this.open(items, `Pick a branch to compare with the currently active ${branchName} branch:`);
+            const tagItems = tags.map(tag => new GitQuickOpenItem(tag, execute, toLabel));
+
+            this.open([...branchItems, ...tagItems], `Pick a branch or tag to compare with the currently active ${branchName} branch:`);
         }
     }
 
@@ -218,6 +220,15 @@ export class GitQuickOpenService {
             this.logError(error);
             return [];
         }
+    }
+
+    private async getTags(): Promise<Tag[]> {
+        const repository = this.getRepository();
+        if (repository) {
+            const result = await this.git.exec(repository, ['tag', '--sort=version:refname']);
+            return result.stdout.trim().split('\n').map(tag => ({ name: tag }));
+        }
+        return [];
     }
 
     private async getBranches(): Promise<Branch[]> {
