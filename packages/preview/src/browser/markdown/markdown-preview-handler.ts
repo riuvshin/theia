@@ -5,12 +5,14 @@
  * You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
  */
 
-import { injectable } from "inversify";
-import { PreviewHandler } from '../preview-handler';
+import { injectable, inject } from "inversify";
+import { PreviewHandler, RenderContentParams } from '../preview-handler';
 import URI from "@theia/core/lib/common/uri";
+import { OpenerService } from '@theia/core/lib/browser';
 
 import * as hljs from 'highlight.js';
 import * as markdownit from 'markdown-it';
+import * as anchor from 'markdown-it-anchor';
 
 @injectable()
 export class MarkdownPreviewHandler implements PreviewHandler {
@@ -18,16 +20,97 @@ export class MarkdownPreviewHandler implements PreviewHandler {
     readonly iconClass: string = 'markdown-icon file-icon';
     readonly contentClass: string = 'markdown-preview';
 
+    @inject(OpenerService) protected readonly openerService: OpenerService;
+
     canHandle(uri: URI): number {
         return uri.path.ext === '.md' ? 500 : 0;
     }
 
-    renderHTML(content: string): string {
-        return this.getEngine().render(content);
+    renderContent(params: RenderContentParams): HTMLElement {
+        const content = params.content;
+        const renderedContent = this.getEngine().render(content);
+        const contentElement = document.createElement('div');
+        contentElement.classList.add(this.contentClass);
+        contentElement.innerHTML = renderedContent;
+        this.addLinkClickedListener(contentElement, params);
+        return contentElement;
     }
 
-    findElementForSourceLine(sourceLine: number, renderedNode: HTMLElement): HTMLElement | undefined {
-        const markedElements = renderedNode.getElementsByClassName('line');
+    protected addLinkClickedListener(contentElement: HTMLElement, params: RenderContentParams): void {
+        contentElement.addEventListener('click', (event: MouseEvent) => {
+            const candidate = (event.target || event.srcElement) as HTMLElement;
+            const link = this.findLink(candidate, contentElement);
+            if (link) {
+                event.preventDefault();
+                if (link.startsWith('#')) {
+                    this.revealFragment(contentElement, link);
+                } else {
+                    const query = (event.ctrlKey) ? '' : 'open=preview';
+                    const uri = this.resolveUri(link, params.baseUri, query);
+                    this.openLink(uri);
+                }
+            }
+        });
+    }
+
+    protected findLink(element: HTMLElement, container: HTMLElement): string | undefined {
+        let candidate = element;
+        while (candidate.tagName !== 'A') {
+            if (candidate === container) {
+                return;
+            }
+            candidate = candidate.parentElement!;
+            if (!candidate) {
+                return;
+            }
+        }
+        return candidate.getAttribute('href') || undefined;
+    }
+
+    protected async openLink(uri: URI): Promise<void> {
+        const opener = await this.openerService.getOpener(uri);
+        opener.open(uri);
+    }
+
+    protected resolveUri(link: string, baseUri: URI, query: string = ''): URI {
+        const linkURI = new URI(link);
+        if (!linkURI.path.isAbsolute) {
+            return baseUri.resolve(linkURI.path).withFragment(linkURI.fragment).withQuery(query);
+        }
+        return linkURI;
+    }
+
+    protected revealFragment(contentElement: HTMLElement, fragment: string) {
+        const elementToReveal = this.findElementForFragment(contentElement, fragment);
+        if (!elementToReveal) {
+            return;
+        }
+        elementToReveal.scrollIntoView({ behavior: 'instant' });
+    }
+
+    findElementForFragment(content: HTMLElement, link: string): HTMLElement | undefined {
+        const fragment = link.startsWith('#') ? link.substring(1) : link;
+        const filter: NodeFilter = {
+            acceptNode: (node: Node) => {
+                if (node instanceof HTMLHeadingElement) {
+                    if (node.tagName.toLowerCase().startsWith('h') && node.id === fragment) {
+                        return NodeFilter.FILTER_ACCEPT;
+                    }
+                    return NodeFilter.FILTER_SKIP;
+                }
+                return NodeFilter.FILTER_SKIP;
+            }
+        };
+        const treeWalker = document.createTreeWalker(content, NodeFilter.SHOW_ELEMENT, filter, false);
+        while (treeWalker.nextNode()) {
+            const element = treeWalker.currentNode as HTMLElement;
+            return element;
+        }
+        return undefined;
+    }
+
+    findElementForSourceLine(content: HTMLElement, sourceLine: number): HTMLElement | undefined {
+        const markedElements = content.getElementsByClassName('line');
         let matchedElement: HTMLElement | undefined;
         for (let i = 0; i < markedElements.length; i++) {
             const element = markedElements[i];
@@ -109,10 +192,10 @@ export class MarkdownPreviewHandler implements PreviewHandler {
                 highlight: (str, lang) => {
                     if (lang && hljs.getLanguage(lang)) {
                         try {
-                            return '<pre class="hljs"><code>' + hljs.highlight(lang, str, true).value + '</code></pre>';
+                            return '<pre class="hljs"><code><div>' + hljs.highlight(lang, str, true).value + '</div></code></pre>';
                         } catch { }
                     }
-                    return '<pre class="hljs"><code>' + engine.utils.escapeHtml(str) + '</code></pre>';
+                    return '<pre class="hljs"><code><div>' + engine.utils.escapeHtml(str) + '</div></code></pre>';
                 }
             });
             const indexingTokenRenderer: markdownit.TokenRender = (tokens, index, options, env, self) => {
@@ -124,9 +207,13 @@ export class MarkdownPreviewHandler implements PreviewHandler {
                 }
                 return self.renderToken(tokens, index, options);
             };
-            engine.renderer.rules.heading_open = indexingTokenRenderer;
-            engine.renderer.rules.paragraph_open = indexingTokenRenderer;
-            engine.renderer.rules.list_item_open = indexingTokenRenderer;
+            const renderers = ['heading_open', 'paragraph_open', 'list_item_open', 'blockquote_open', 'code_block', 'image'];
+            for (const renderer of renderers) {
+                engine.renderer.rules[renderer] = indexingTokenRenderer;
+            }
+            anchor(engine, {
+
+            });
         }
         return this.engine;
     }

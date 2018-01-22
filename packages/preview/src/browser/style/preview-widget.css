@@ -5,12 +5,12 @@
  * You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
  */
 
-/*---------------------------------------------------------------------------------------------
- *  Copyright (c) Microsoft Corporation. All rights reserved.
- *  Licensed under the MIT License. See License.txt in the project root for license information.
- *--------------------------------------------------------------------------------------------*/
-
- .theia-preview-widget {
+.theia-preview-widget {
 	overflow-y: auto;
     overflow-x: hidden;
+}
+
+.theia-preview-widget:focus {
+    outline: 0;
+    box-shadow: none;
 }

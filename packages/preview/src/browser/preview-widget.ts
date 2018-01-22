@@ -12,7 +12,7 @@ import {
 import {
     Resource,
     DisposableCollection,
-    Disposable
+    MaybePromise
 } from '@theia/core';
 import {
     BaseWidget,
@@ -51,6 +51,7 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
 
     protected resource: Resource | undefined;
     protected previewHandler: PreviewHandler | undefined;
+    protected firstUpdate: (() => void) | undefined = undefined;
     protected readonly previewDisposables = new DisposableCollection();
     protected readonly onDidScrollEmitter = new Emitter<number>();
     protected readonly onDidDoubleClickEmitter = new Emitter<Location>();
@@ -67,7 +68,7 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
     constructor(
     ) {
         super();
-        this.id = 'preview-' + widgetCounter++;
+        this.id = 'preview-widget-' + widgetCounter++;
         this.title.iconClass = DEFAULT_ICON;
         this.title.closable = true;
         this.addClass(PREVIEW_WIDGET_CLASS);
@@ -90,6 +91,9 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
 
     protected startDoubleClickListener(): void {
         this.node.addEventListener('dblclick', (event: MouseEvent) => {
+            if (!(event.target instanceof HTMLElement)) {
+                return;
+            }
             const target = event.target as HTMLElement;
             let node: HTMLElement | null = target;
             while (node && node instanceof HTMLElement) {
@@ -106,7 +110,11 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
 
     onActivateRequest(msg: Message): void {
         super.onActivateRequest(msg);
-        this.node.focus();
+        if (this.node.children.length > 0) {
+            (this.node.children.item(0) as HTMLElement).focus();
+        } else {
+            this.node.focus();
+        }
         this.update();
     }
 
@@ -115,25 +123,28 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
         if (this.resource) {
             const uri = this.resource.uri;
             const document = this.workspace.textDocuments.find(d => d.uri === uri.toString());
-            if (document) {
-                const contents = document.getText();
-                this.renderHTML(contents).then(html => {
-                    this.node.innerHTML = html;
-                });
-            } else {
-                this.resource.readContents().then(async contents => {
-                    this.node.innerHTML = await this.renderHTML(contents);
-                });
+            this.updateContent(document ? document.getText() : this.resource.readContents());
+        }
+    }
+
+    protected async updateContent(content: MaybePromise<string>): Promise<void> {
+        const contentElement = await this.render(await content);
+        this.node.innerHTML = '';
+        if (contentElement) {
+            this.node.appendChild(contentElement);
+            if (this.firstUpdate) {
+                this.firstUpdate();
+                this.firstUpdate = undefined;
             }
         }
     }
 
-    protected async renderHTML(content: string): Promise<string> {
-        if (!this.previewHandler) {
-            return '';
+    protected async render(content: string): Promise<HTMLElement | undefined> {
+        if (!this.previewHandler || !this.resource) {
+            return undefined;
         }
-        const renderedHTML = await this.previewHandler.renderHTML(content);
-        return renderedHTML || '';
+        const baseUri = this.resource.uri.parent;
+        return this.previewHandler.renderContent({ content, baseUri });
     }
 
     storeState(): object {
@@ -176,17 +187,28 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
         this.previewDisposables.push(this.workspace.onDidChangeTextDocument((params: DidChangeTextDocumentParams) => updateIfAffected(params.textDocument.uri)));
         this.previewDisposables.push(this.workspace.onDidCloseTextDocument((document: TextDocument) => updateIfAffected(document.uri)));
 
-        const contentClass = previewHandler.contentClass;
-        this.addClass(contentClass);
-        this.previewDisposables.push(Disposable.create(() => {
-            this.removeClass(contentClass);
-        }));
-
-        this.title.label = `${uri.path.base} preview`;
+        this.title.label = `Preview ${uri.path.base}`;
         this.title.iconClass = previewHandler.iconClass || DEFAULT_ICON;
         this.title.caption = this.title.label;
         this.title.closable = true;
+        this.firstUpdate = () => {
+            this.revealFragment(uri);
+        };
         this.update();
+    }
+
+    revealFragment(uri: URI): void {
+        if (uri.fragment === '' || !this.previewHandler || !this.previewHandler.findElementForFragment) {
+            return;
+        }
+        const elementToReveal = this.previewHandler.findElementForFragment(this.node, uri.fragment);
+        if (elementToReveal) {
+            this.preventScrollNotification = true;
+            elementToReveal.scrollIntoView({ behavior: 'instant' });
+            window.setTimeout(() => {
+                this.preventScrollNotification = false;
+            }, 50);
+        }
     }
 
     get uri(): URI | undefined {
@@ -200,7 +222,7 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
         if (!this.previewHandler || !this.previewHandler.findElementForSourceLine) {
             return;
         }
-        const elementToReveal = this.previewHandler.findElementForSourceLine(sourceLine, this.node);
+        const elementToReveal = this.previewHandler.findElementForSourceLine(this.node, sourceLine);
         if (elementToReveal) {
             this.preventScrollNotification = true;
             elementToReveal.scrollIntoView({ behavior: 'instant' });

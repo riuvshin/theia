@@ -10,6 +10,7 @@ import {
     injectable
 } from 'inversify';
 import { DisposableCollection } from '@theia/core';
+import URI from "@theia/core/lib/common/uri";
 import {
     WidgetFactory,
 } from '@theia/core/lib/browser';
@@ -37,21 +38,22 @@ export class PreviewWidgetManager implements WidgetFactory {
     ) { }
 
     async createWidget(uri: string): Promise<PreviewWidget> {
-        const previewWidget = this.widgets.get(uri);
+        const key = this.asKey(uri);
+        const previewWidget = this.widgets.get(key);
         if (previewWidget) {
             return previewWidget;
         }
         const newWidget = this.container.get(PreviewWidget);
-        this.widgets.set(uri, newWidget);
+        this.widgets.set(key, newWidget);
         newWidget.disposed.connect(() => {
-            this.widgets.delete(uri);
+            this.widgets.delete(key);
         });
-        this.fireWidgetCreated(uri);
+        this.fireWidgetCreated(key);
         return newWidget;
     }
 
     get(uri: string): PreviewWidget | undefined {
-        return this.widgets.get(uri);
+        return this.widgets.get(this.asKey(uri));
     }
 
     get onWidgetCreated(): Event<string> {
@@ -60,6 +62,10 @@ export class PreviewWidgetManager implements WidgetFactory {
 
     protected fireWidgetCreated(uri: string): void {
         this.onWidgetCreatedEmitter.fire(uri);
+    }
+
+    protected asKey(uri: string): string {
+        return new URI(uri).withoutQuery().withoutFragment().toString();
     }
 
 }

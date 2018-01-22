@@ -6,7 +6,7 @@
  */
 
 import { injectable, inject } from "inversify";
-import { FrontendApplicationContribution, FrontendApplication, OpenHandler, ApplicationShell } from "@theia/core/lib/browser";
+import { FrontendApplicationContribution, FrontendApplication, OpenHandler, OpenerOptions, ApplicationShell } from "@theia/core/lib/browser";
 import { EDITOR_CONTEXT_MENU, EditorManager, TextEditor } from '@theia/editor/lib/browser';
 import { CommandContribution, CommandRegistry, Command, MenuContribution, MenuModelRegistry, CommandHandler, Disposable } from "@theia/core/lib/common";
 import { DisposableCollection } from '@theia/core';
@@ -50,7 +50,6 @@ export class PreviewContribution implements CommandContribution, MenuContributio
     onStart() {
         this.previewWidgetManager.onWidgetCreated(uri => {
             this.registerOpenOnDoubleClick(uri);
-            this.registerLinkNavigation(uri);
             this.registerEditorAndPreviewSync(uri, 'preview');
         });
         this.editorManager.onActiveEditorChanged(editorWidget => {
@@ -134,8 +133,12 @@ export class PreviewContribution implements CommandContribution, MenuContributio
         previewWidget.disposed.connect(() => disposable.dispose());
     }
 
-    canHandle(uri: URI): number {
-        return (this.previewHandlerProvider.canHandle(uri)) ? 50 : 0;
+    canHandle(uri: URI, options?: OpenerOptions): number {
+        let canHandle = (this.previewHandlerProvider.canHandle(uri)) ? 50 : 0;
+        if (canHandle && uri.query.indexOf(this.id) >= 0) {
+            canHandle = 200;
+        }
+        return canHandle;
     }
 
     async open(uri: URI, options: ApplicationShell.WidgetOptions = { area: 'main', mode: 'tab-after' }, activate: boolean = true): Promise<PreviewWidget> {

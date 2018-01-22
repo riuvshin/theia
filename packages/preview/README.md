@@ -1,6 +1,6 @@
 # Theia - Preview Extension
 
-Shows a preview of supported resources.
+Shows a preview of supported resources. It comes with built-in support for rendering markdown files.
 
 See [here](https://github.com/theia-ide/theia).
 
