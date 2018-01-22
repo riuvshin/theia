@@ -197,7 +197,7 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
         this.internalRevealForSourceLine(sourceLine);
     }
     protected readonly internalRevealForSourceLine: (sourceLine: number) => void = throttle(50, (sourceLine: number) => {
-        if (!this.previewHandler) {
+        if (!this.previewHandler || !this.previewHandler.findElementForSourceLine) {
             return;
         }
         const elementToReveal = this.previewHandler.findElementForSourceLine(sourceLine, this.node);
@@ -219,7 +219,7 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
     }
 
     protected didScroll(scrollTop: number): void {
-        if (!this.previewHandler) {
+        if (!this.previewHandler || !this.previewHandler.getSourceLineForOffset) {
             return;
         }
         const offset = scrollTop;
@@ -244,7 +244,7 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
     }
 
     protected didDoubleClick(offsetTop: number): void {
-        if (!this.previewHandler) {
+        if (!this.previewHandler || !this.previewHandler.getSourceLineForOffset) {
             return;
         }
         const line = this.previewHandler.getSourceLineForOffset(this.node, offsetTop);
