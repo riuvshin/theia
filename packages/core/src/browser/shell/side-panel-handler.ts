@@ -10,10 +10,9 @@ import { ArrayExt, find, map, toArray } from '@phosphor/algorithm';
 import { TabBar, Widget, DockPanel, Title } from '@phosphor/widgets';
 import { Signal } from '@phosphor/signaling';
 import { MimeData } from '@phosphor/coreutils';
-import { ElementExt } from '@phosphor/domutils';
 import { Drag } from '@phosphor/dragdrop';
 import { AttachedProperty } from '@phosphor/properties';
-import { TabBarRendererFactory, TabBarRenderer, SHELL_TABBAR_CONTEXT_MENU } from './tab-bars';
+import { TabBarRendererFactory, TabBarRenderer, SHELL_TABBAR_CONTEXT_MENU, SideTabBar } from './tab-bars';
 
 /** The class name added to the main and bottom area panels. */
 export const MAIN_BOTTOM_AREA_CLASS = 'theia-app-centers';
@@ -343,86 +342,6 @@ export class SideDockPanel extends DockPanel {
     protected onChildRemoved(msg: Widget.ChildMessage): void {
         super.onChildRemoved(msg);
         this.widgetRemoved.emit(msg.child);
-    }
-
-}
-
-/**
- * A specialized tab bar for side areas.
- */
-export class SideTabBar extends TabBar<Widget> {
-
-    readonly collapseRequested = new Signal<this, Title<Widget>>(this);
-
-    private mouseDownTabIndex = -1;
-
-    handleEvent(event: Event): void {
-        switch (event.type) {
-            case 'mousedown':
-                this.onMouseDown(event as MouseEvent);
-                super.handleEvent(event);
-                break;
-            case 'mouseup':
-                super.handleEvent(event);
-                this.onMouseUp(event as MouseEvent);
-                break;
-            case 'mousemove':
-                this.onMouseMove(event as MouseEvent);
-                super.handleEvent(event);
-                break;
-            default:
-                super.handleEvent(event);
-        }
-    }
-
-    private onMouseDown(event: MouseEvent): void {
-        // Check for left mouse button and current drag status
-        if (event.button !== 0 || (this as any)._dragData) {
-            return;
-        }
-
-        // Check whether the mouse went down on the current tab
-        const tabs = this.contentNode.children;
-        const index = ArrayExt.findFirstIndex(tabs, tab => ElementExt.hitTest(tab, event.clientX, event.clientY));
-        if (index !== this.currentIndex) {
-            return;
-        }
-
-        // Check whether the close button was clicked
-        const icon = tabs[index].querySelector(this.renderer.closeIconSelector);
-        if (icon && icon.contains(event.target as HTMLElement)) {
-            return;
-        }
-
-        this.mouseDownTabIndex = index;
-    }
-
-    private onMouseUp(event: MouseEvent): void {
-        // Check for left mouse button
-        if (event.button !== 0) {
-            return;
-        }
-
-        // Check whether the mouse went up on the current tab
-        const mouseDownTabIndex = this.mouseDownTabIndex;
-        this.mouseDownTabIndex = -1;
-        const tabs = this.contentNode.children;
-        const index = ArrayExt.findFirstIndex(tabs, tab => ElementExt.hitTest(tab, event.clientX, event.clientY));
-        if (index < 0 || index !== mouseDownTabIndex) {
-            return;
-        }
-
-        // Collapse the side bar
-        this.collapseRequested.emit(this.titles[index]);
-    }
-
-    private onMouseMove(event: MouseEvent): void {
-        // Check for left mouse button
-        if (event.button !== 0) {
-            return;
-        }
-
-        this.mouseDownTabIndex = -1;
     }
 
 }
