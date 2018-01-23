@@ -213,9 +213,7 @@ export class MarkdownPreviewHandler implements PreviewHandler {
                         : self.renderToken(tokens, index, options);
                 };
             }
-            anchor(engine, {
-
-            });
+            anchor(engine, {});
         }
         return this.engine;
     }

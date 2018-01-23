@@ -120,15 +120,16 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
 
     onUpdateRequest(msg: Message): void {
         super.onUpdateRequest(msg);
-        if (this.resource) {
-            this.updateContent(this.resource);
-        }
+        this.performUpdate();
     }
 
-    protected async updateContent(resource: Resource): Promise<void> {
-        const uri = resource.uri;
+    protected async performUpdate(): Promise<void> {
+        if (!this.resource) {
+            return;
+        }
+        const uri = this.resource.uri;
         const document = this.workspace.textDocuments.find(d => d.uri === uri.toString());
-        const content: MaybePromise<string> = document ? document.getText() : resource.readContents();
+        const content: MaybePromise<string> = document ? document.getText() : this.resource.readContents();
         const contentElement = await this.render(await content, uri);
         this.node.innerHTML = '';
         if (contentElement) {
@@ -158,7 +159,7 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
         const state = oldState as any;
         if (state.uri) {
             const uri = new URI(state.uri);
-            this.start(uri);
+            this.updateContent(uri);
         }
     }
 
@@ -167,7 +168,7 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
         this.previewDisposables.dispose();
     }
 
-    async start(uri: URI): Promise<void> {
+    async updateContent(uri: URI): Promise<void> {
         const previewHandler = this.previewHandler = this.previewHandlerProvider.findContribution(uri)[0];
         if (!previewHandler) {
             return;

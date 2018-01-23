@@ -159,8 +159,6 @@ export class PreviewContribution implements CommandContribution, MenuContributio
 
     async open(uri: URI, options?: PreviewOpenerOptions): Promise<PreviewWidget> {
         const openerOptions = this.updateOpenerOptions(options);
-        console.log(options);
-
         const previewWidget = <PreviewWidget>await this.widgetManager.getOrCreateWidget(PREVIEW_WIDGET_FACTORY_ID, uri.toString());
         if (!previewWidget.isAttached) {
             this.app.shell.addWidget(previewWidget, openerOptions.widgetOptions || this.defaultOpenOptions.widgetOptions!);
@@ -168,7 +166,7 @@ export class PreviewContribution implements CommandContribution, MenuContributio
         if (openerOptions.activate) {
             this.app.shell.activateWidget(previewWidget.id);
         }
-        await previewWidget.start(uri);
+        await previewWidget.updateContent(uri);
         return previewWidget;
     }
 
