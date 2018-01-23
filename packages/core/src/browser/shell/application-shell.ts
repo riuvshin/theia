@@ -114,51 +114,6 @@ export class ApplicationShell extends Widget {
     }
 
     /**
-     * Create a panel that arranges a side bar around the given main area.
-     */
-    protected createSideBarLayout(side: ApplicationShell.Area, mainArea: Widget): Panel {
-        const spacing = 0;
-        let boxLayout: BoxLayout;
-        switch (side) {
-            case 'left':
-                boxLayout = this.createBoxLayout([this.leftPanelHandler.tabBar, this.leftPanelHandler.dockPanel], [0, 1],
-                    { direction: 'left-to-right', spacing });
-                break;
-            case 'right':
-                boxLayout = this.createBoxLayout([this.rightPanelHandler.dockPanel, this.rightPanelHandler.tabBar], [1, 0],
-                    { direction: 'left-to-right', spacing });
-                break;
-            case 'bottom':
-                boxLayout = this.createBoxLayout([this.bottomPanelHandler.tabBar, this.bottomPanelHandler.dockPanel], [0, 1],
-                    { direction: 'top-to-bottom', spacing });
-                break;
-            default:
-                throw new Error('Illegal argument: ' + side);
-        }
-        const boxPanel = new BoxPanel({ layout: boxLayout });
-        boxPanel.id = 'theia-' + side + '-content-panel';
-        boxPanel.hide();
-
-        let splitLayout: SplitLayout;
-        switch (side) {
-            case 'left':
-                splitLayout = this.createSplitLayout([boxPanel, mainArea], [0, 1], { orientation: 'horizontal', spacing });
-                break;
-            case 'right':
-                splitLayout = this.createSplitLayout([mainArea, boxPanel], [1, 0], { orientation: 'horizontal', spacing });
-                break;
-            case 'bottom':
-                splitLayout = this.createSplitLayout([mainArea, boxPanel], [1, 0], { orientation: 'vertical', spacing });
-                break;
-            default:
-                throw new Error('Illegal argument: ' + side);
-        }
-        const splitPanel = new SplitPanel({ layout: splitLayout });
-        splitPanel.id = 'theia-' + side + '-split-panel';
-        return splitPanel;
-    }
-
-    /**
      * Create a box layout to assemble the application shell layout.
      */
     protected createBoxLayout(widgets: Widget[], stretch?: number[], options?: BoxPanel.IOptions): BoxLayout {
@@ -195,12 +150,23 @@ export class ApplicationShell extends Widget {
      * of the main area and the side bars.
      */
     protected createLayout(): Layout {
-        const panelForBottomSideBar = this.createSideBarLayout('bottom', this.mainPanel);
-        const panelForRightSideBar = this.createSideBarLayout('right', panelForBottomSideBar);
-        const panelForLeftSideBar = this.createSideBarLayout('left', panelForRightSideBar);
+        const bottomSplitLayout = this.createSplitLayout(
+            [this.mainPanel, this.bottomPanelHandler.container],
+            [1, 0],
+            { orientation: 'vertical', spacing: 2 }
+        );
+        const panelForBottomArea = new SplitPanel({ layout: bottomSplitLayout });
+        panelForBottomArea.id = 'theia-bottom-split-panel';
+        const leftRightSplitLayout = this.createSplitLayout(
+            [this.leftPanelHandler.container, panelForBottomArea, this.rightPanelHandler.container],
+            [0, 1, 0],
+            { orientation: 'horizontal', spacing: 2 }
+        );
+        const panelForSideAreas = new SplitPanel({ layout: leftRightSplitLayout });
+        panelForSideAreas.id = 'theia-left-right-split-panel';
 
         return this.createBoxLayout(
-            [this.topPanel, panelForLeftSideBar, this.statusBar],
+            [this.topPanel, panelForSideAreas, this.statusBar],
             [0, 1, 0],
             { direction: 'top-to-bottom', spacing: 0 }
         );

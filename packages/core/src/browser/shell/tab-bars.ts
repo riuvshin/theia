@@ -7,54 +7,89 @@
 
 import { injectable, inject } from 'inversify';
 import { TabBar, Title, Widget, DockPanel } from '@phosphor/widgets';
-import { VirtualElement, h } from '@phosphor/virtualdom';
+import { VirtualElement, h, VirtualDOM, ElementInlineStyle } from '@phosphor/virtualdom';
 import { MenuPath } from '../../common';
 import { ContextMenuRenderer } from '../context-menu-renderer';
 import { Signal } from '@phosphor/signaling';
 import { Message } from '@phosphor/messaging';
 import { ArrayExt } from '@phosphor/algorithm';
 import { ElementExt } from '@phosphor/domutils';
-import { IDragEvent } from '@phosphor/dragdrop';
+// import { IDragEvent } from '@phosphor/dragdrop';
+
+/** The class name added to hidden content nodes, which are required to render vertical side bars. */
+const HIDDEN_CONTENT_CLASS = 'theia-TabBar-hidden-content';
 
 export const SHELL_TABBAR_CONTEXT_MENU: MenuPath = ['shell-tabbar-context-menu'];
 
 export const TabBarRendererFactory = Symbol('TabBarRendererFactory');
 
+export interface LabelRenderData {
+    width: number;
+    height: number;
+    paddingTop: number;
+    paddingBottom: number;
+}
+
+export interface SideBarRenderData extends TabBar.IRenderData<Widget> {
+    labelData?: LabelRenderData;
+}
+
 /**
  * A tab bar renderer that offers a context menu.
  */
-@injectable()
-export class TabBarRenderer implements TabBar.IRenderer<any> {
+export class TabBarRenderer extends TabBar.Renderer {
 
-    readonly closeIconSelector = TabBar.defaultRenderer.closeIconSelector;
+    constructor(protected readonly contextMenuRenderer: ContextMenuRenderer) {
+        super();
+    }
 
     tabBar?: TabBar<Widget>;
     contextMenuPath?: MenuPath;
 
-    constructor(
-        @inject(ContextMenuRenderer) protected readonly contextMenuRenderer: ContextMenuRenderer
-    ) { }
-
-    renderTab(data: TabBar.IRenderData<any>): VirtualElement {
-        const defaultRenderer = TabBar.defaultRenderer;
+    renderTab(data: SideBarRenderData): VirtualElement {
         const title = data.title;
-        const key = defaultRenderer.createTabKey(data);
-        const style = defaultRenderer.createTabStyle(data);
-        const className = defaultRenderer.createTabClass(data);
-        const dataset = defaultRenderer.createTabDataset(data);
-        return (
-            h.li({
+        const key = this.createTabKey(data);
+        const style = this.createTabStyle(data);
+        const className = this.createTabClass(data);
+        const dataset = this.createTabDataset(data);
+        return h.li(
+            {
                 key, className, title: title.caption, style, dataset,
                 oncontextmenu: event => this.handleContextMenuEvent(event, title)
             },
-                defaultRenderer.renderIcon(data),
-                defaultRenderer.renderLabel(data),
-                defaultRenderer.renderCloseIcon(data)
-            )
+            this.renderIcon(data),
+            this.renderLabel(data),
+            this.renderCloseIcon(data)
         );
     }
 
-    handleContextMenuEvent(event: MouseEvent, title: Title<Widget>) {
+    createTabStyle({ zIndex, labelData }: SideBarRenderData): ElementInlineStyle {
+        if (labelData) {
+            const totalHeight = labelData.width + labelData.paddingTop + labelData.paddingBottom;
+            return {
+                zIndex: `${zIndex}`,
+                height: `${totalHeight}px`
+            };
+        } else {
+            return {
+                zIndex: `${zIndex}`
+            };
+        }
+    }
+
+    renderLabel(data: SideBarRenderData): VirtualElement {
+        let style: ElementInlineStyle | undefined;
+        if (data.labelData) {
+            style = {
+                width: `${data.labelData.width}px`,
+                height: `${data.labelData.height}px`,
+                minHeight: `${data.labelData.height}px`
+            };
+        }
+        return h.div({ className: 'p-TabBar-tabLabel', style }, data.title.label);
+    }
+
+    protected handleContextMenuEvent(event: MouseEvent, title: Title<Widget>) {
         if (this.contextMenuPath) {
             event.stopPropagation();
             event.preventDefault();
@@ -96,13 +131,59 @@ export class SideTabBar extends TabBar<Widget> {
 
     constructor(options?: TabBar.IOptions<Widget>) {
         super(options);
+
+        const hiddenContent = document.createElement('ul');
+        hiddenContent.className = HIDDEN_CONTENT_CLASS;
+        this.node.appendChild(hiddenContent);
+
         this.overlay = new DockPanel.Overlay();
         this.node.appendChild(this.overlay.node);
+    }
+
+    get hiddenContentNode(): HTMLUListElement {
+        return this.node.getElementsByClassName(HIDDEN_CONTENT_CLASS)[0] as HTMLUListElement;
     }
 
     dispose(): void {
         this.overlay.hide(0);
         super.dispose();
+    }
+
+    protected onUpdateRequest(msg: Message): void {
+        this.renderTabs(this.hiddenContentNode);
+        window.requestAnimationFrame(() => {
+            const hiddenContent = this.hiddenContentNode;
+            const n = hiddenContent.children.length;
+            const labelData = new Array<LabelRenderData>(n);
+            for (let i = 0; i < n; i++) {
+                const hiddenTab = hiddenContent.children[i];
+                const tabStyle = window.getComputedStyle(hiddenTab);
+                const label = hiddenTab.getElementsByClassName('p-TabBar-tabLabel')[0];
+                labelData[i] = {
+                    width: label.clientWidth,
+                    height: label.clientHeight,
+                    paddingTop: parseFloat(tabStyle.paddingTop!) || 0,
+                    paddingBottom: parseFloat(tabStyle.paddingBottom!) || 0
+                };
+            }
+            this.renderTabs(this.contentNode, labelData);
+        });
+    }
+
+    protected renderTabs(host: HTMLElement, labelData?: LabelRenderData[]) {
+        const titles = this.titles;
+        const n = titles.length;
+        const renderer = this.renderer as TabBarRenderer;
+        const currentTitle = this.currentTitle;
+        const content = new Array<VirtualElement>(n);
+        for (let i = 0; i < n; i++) {
+            const title = titles[i];
+            const current = title === currentTitle;
+            const zIndex = current ? n : n - i - 1;
+            const labelDatum = labelData && i < labelData.length ? labelData[i] : undefined;
+            content[i] = renderer.renderTab({ title, current, zIndex, labelData: labelDatum });
+        }
+        VirtualDOM.render(content, host);
     }
 
     protected showOverlay(clientX: number, clientY: number) {
@@ -168,17 +249,17 @@ export class SideTabBar extends TabBar<Widget> {
     handleEvent(event: Event): void {
         switch (event.type) {
             case 'p-dragenter':
-                this.onDragEnter(event as IDragEvent);
-                break;
-            case 'p-dragleave':
-                this.onDragLeave(event as IDragEvent);
-                break;
-            case 'p-dragover':
-                this.onDragOver(event as IDragEvent);
-                break;
-            case 'p-drop':
-                this.onDrop(event as IDragEvent);
-                break;
+            //     this.onDragEnter(event as IDragEvent);
+            //     break;
+            // case 'p-dragleave':
+            //     this.onDragLeave(event as IDragEvent);
+            //     break;
+            // case 'p-dragover':
+            //     this.onDragOver(event as IDragEvent);
+            //     break;
+            // case 'p-drop':
+            //     this.onDrop(event as IDragEvent);
+            //     break;
             case 'mousedown':
                 this.onMouseDown(event as MouseEvent);
                 super.handleEvent(event);
@@ -196,6 +277,7 @@ export class SideTabBar extends TabBar<Widget> {
         }
     }
 
+    /*
     private onDragEnter(event: IDragEvent): void {
         if (event.mimeData.hasData('application/vnd.phosphor.widget-factory')) {
             event.preventDefault();
@@ -256,6 +338,7 @@ export class SideTabBar extends TabBar<Widget> {
         }
         this.currentIndex = index;
     }
+    */
 
     private onMouseDown(event: MouseEvent): void {
         // Check for left mouse button and current drag status

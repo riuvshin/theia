@@ -7,7 +7,7 @@
 
 import { injectable, inject } from 'inversify';
 import { ArrayExt, find, map, toArray } from '@phosphor/algorithm';
-import { TabBar, Widget, DockPanel, Title } from '@phosphor/widgets';
+import { TabBar, Widget, DockPanel, Title, Panel, BoxPanel, BoxLayout } from '@phosphor/widgets';
 import { Signal } from '@phosphor/signaling';
 import { MimeData } from '@phosphor/coreutils';
 import { Drag } from '@phosphor/dragdrop';
@@ -38,27 +38,31 @@ export class SidePanelHandler {
     @inject(TabBarRendererFactory) protected tabBarRendererFactory: () => TabBarRenderer;
 
     protected side: 'left' | 'right' | 'bottom';
+    protected lastActiveTabIndex: number = -1;
 
     tabBar: SideTabBar;
     dockPanel: SideDockPanel;
+    container: Panel;
 
     /**
      * Create the side bar and dock panel widgets.
      */
     create(side: 'left' | 'right' | 'bottom'): void {
         this.side = side;
-        this.tabBar = this.createSideBar(side);
-        this.dockPanel = this.createSidePanel(side);
+        this.tabBar = this.createSideBar();
+        this.dockPanel = this.createSidePanel();
+        this.container = this.createContainer();
 
         this.refreshVisibility();
     }
 
-    protected createSideBar(side: 'left' | 'right' | 'bottom'): SideTabBar {
+    protected createSideBar(): SideTabBar {
+        const side = this.side;
         const tabBarRenderer = this.tabBarRendererFactory();
         const sideBar = new SideTabBar({
             orientation: side === 'left' || side === 'right' ? 'vertical' : 'horizontal',
             insertBehavior: 'none',
-            removeBehavior: 'none',
+            removeBehavior: 'select-previous-tab',
             allowDeselect: false,
             tabsMovable: true,
             renderer: tabBarRenderer
@@ -81,15 +85,41 @@ export class SidePanelHandler {
         return sideBar;
     }
 
-    protected createSidePanel(side: 'left' | 'right' | 'bottom'): SideDockPanel {
+    protected createSidePanel(): SideDockPanel {
         const sidePanel = new SideDockPanel({
             mode: 'single-document'
         });
-        sidePanel.id = 'theia-' + side + '-stack';
+        sidePanel.id = 'theia-' + this.side + '-stack';
         sidePanel.widgetAdded.connect(this.onWidgetAdded, this);
         sidePanel.widgetActivated.connect(this.onWidgetActivated, this);
         sidePanel.widgetRemoved.connect(this.onWidgetRemoved, this);
         return sidePanel;
+    }
+
+    protected createContainer(): Panel {
+        const side = this.side;
+        let direction: BoxLayout.Direction;
+        switch (side) {
+            case 'left':
+                direction = 'left-to-right';
+                break;
+            case 'right':
+                direction = 'right-to-left';
+                break;
+            case 'bottom':
+                direction = 'top-to-bottom';
+                break;
+            default:
+                throw new Error('Illegal argument: ' + side);
+        }
+        const boxLayout = new BoxLayout({ direction, spacing: 0 });
+        BoxPanel.setStretch(this.tabBar, 0);
+        boxLayout.addWidget(this.tabBar);
+        BoxPanel.setStretch(this.dockPanel, 1);
+        boxLayout.addWidget(this.dockPanel);
+        const boxPanel = new BoxPanel({ layout: boxLayout });
+        boxPanel.id = 'theia-' + side + '-content-panel';
+        return boxPanel;
     }
 
     getLayoutData(): SidePanel.LayoutData {
@@ -131,17 +161,30 @@ export class SidePanelHandler {
     }
 
     /**
-     * Expand a widget residing in the side panel by ID.
+     * Expand a widget residing in the side panel by ID. If no ID is given and the panel is
+     * currently collapsed, the last active tab of this side panel is expanded. If no tab
+     * was expanded previously, the first one is taken.
      *
      * @returns the expanded widget if it was found
      */
-    expand(id: string): Widget | undefined {
-        const widget = find(this.dockPanel.widgets(), w => w.id === id);
-        if (widget) {
-            this.tabBar.currentTitle = widget.title;
-            this.refreshVisibility();
+    expand(id?: string): Widget | undefined {
+        if (id) {
+            const widget = find(this.dockPanel.widgets(), w => w.id === id);
+            if (widget) {
+                this.tabBar.currentTitle = widget.title;
+            }
+            return widget;
+        } else if (this.tabBar.titles.length > 0 && !this.tabBar.currentTitle) {
+            let index = this.lastActiveTabIndex;
+            if (index < 0) {
+                index = 0;
+            } else if (index >= this.tabBar.titles.length) {
+                index = this.tabBar.titles.length - 1;
+            }
+            const title = this.tabBar.titles[index];
+            this.tabBar.currentTitle = title;
+            return title.owner;
         }
-        return widget;
     }
 
     /**
@@ -149,7 +192,6 @@ export class SidePanelHandler {
      */
     collapse(): void {
         this.tabBar.currentTitle = null;
-        this.refreshVisibility();
     }
 
     /**
@@ -171,13 +213,11 @@ export class SidePanelHandler {
         const hideSideBar = this.tabBar.titles.length === 0;
         const currentTitle = this.tabBar.currentTitle;
         const hideDockPanel = currentTitle === null;
-        if (this.dockPanel.parent) {
-            this.dockPanel.parent.setHidden(hideSideBar && hideDockPanel);
-            if (hideDockPanel) {
-                this.dockPanel.parent.addClass(COLLAPSED_CLASS);
-            } else {
-                this.dockPanel.parent.removeClass(COLLAPSED_CLASS);
-            }
+        this.container.setHidden(hideSideBar && hideDockPanel);
+        if (hideDockPanel) {
+            this.container.addClass(COLLAPSED_CLASS);
+        } else {
+            this.container.removeClass(COLLAPSED_CLASS);
         }
         this.tabBar.setHidden(hideSideBar);
         this.dockPanel.setHidden(hideDockPanel);
@@ -189,7 +229,10 @@ export class SidePanelHandler {
     /**
      * Handle a `currentChanged` signal from the sidebar.
      */
-    protected onCurrentTabChanged(sender: SideTabBar, args: TabBar.ICurrentChangedArgs<Widget>): void {
+    protected onCurrentTabChanged(sender: SideTabBar, { currentTitle, currentIndex }: TabBar.ICurrentChangedArgs<Widget>): void {
+        if (currentIndex >= 0) {
+            this.lastActiveTabIndex = currentIndex;
+        }
         this.refreshVisibility();
     }
 
@@ -262,24 +305,12 @@ export class SidePanelHandler {
      */
     protected onWidgetActivated(sender: DockPanel, widget: Widget): void {
         this.tabBar.currentTitle = widget.title;
-        this.refreshVisibility();
     }
 
     /*
      * Handle the `widgetRemoved` signal from the dock panel.
      */
     protected onWidgetRemoved(sender: DockPanel, widget: Widget): void {
-        if (this.tabBar.currentTitle === widget.title && this.side === 'bottom') {
-            const titles = this.tabBar.titles;
-            const index = ArrayExt.findFirstIndex(titles, title => title.owner === widget);
-            if (index >= 0) {
-                if (index < titles.length - 1) {
-                    this.tabBar.currentTitle = titles[index + 1];
-                } else if (index > 0) {
-                    this.tabBar.currentTitle = titles[index - 1];
-                }
-            }
-        }
         this.tabBar.removeTab(widget.title);
         this.refreshVisibility();
     }

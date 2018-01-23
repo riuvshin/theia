@@ -31,6 +31,7 @@ import {
 import { StatusBar, StatusBarImpl } from "./status-bar/status-bar";
 import { LabelParser } from './label-parser';
 import { LabelProvider, LabelProviderContribution, DefaultUriLabelProviderContribution } from "./label-provider";
+import { ContextMenuRenderer } from './context-menu-renderer';
 
 import '../../src/browser/style/index.css';
 import 'font-awesome/css/font-awesome.min.css';
@@ -46,8 +47,10 @@ export const frontendApplicationModule = new ContainerModule((bind, unbind, isBo
     bind(SidePanelHandler).toSelf();
 
     bind(DockPanelRenderer).toSelf();
-    bind(TabBarRendererFactory).toAutoFactory(TabBarRenderer);
-    bind(TabBarRenderer).toSelf();
+    bind(TabBarRendererFactory).toFactory(context => () => {
+        const contextMenuRenderer = context.container.get<ContextMenuRenderer>(ContextMenuRenderer);
+        return new TabBarRenderer(contextMenuRenderer);
+    });
 
     bindContributionProvider(bind, OpenHandler);
     bind(DefaultOpenerService).toSelf().inSingletonScope();
