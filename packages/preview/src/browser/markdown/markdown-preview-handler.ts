@@ -198,18 +198,20 @@ export class MarkdownPreviewHandler implements PreviewHandler {
                     return '<pre class="hljs"><code><div>' + engine.utils.escapeHtml(str) + '</div></code></pre>';
                 }
             });
-            const indexingTokenRenderer: markdownit.TokenRender = (tokens, index, options, env, self) => {
-                const token = tokens[index];
-                if (token.map) {
-                    const line = token.map[0];
-                    token.attrJoin('class', 'line');
-                    token.attrSet('data-line', line.toString());
-                }
-                return self.renderToken(tokens, index, options);
-            };
             const renderers = ['heading_open', 'paragraph_open', 'list_item_open', 'blockquote_open', 'code_block', 'image'];
             for (const renderer of renderers) {
-                engine.renderer.rules[renderer] = indexingTokenRenderer;
+                const originalRenderer = engine.renderer.rules[renderer];
+                engine.renderer.rules[renderer] = (tokens, index, options, env, self) => {
+                    const token = tokens[index];
+                    if (token.map) {
+                        const line = token.map[0];
+                        token.attrJoin('class', 'line');
+                        token.attrSet('data-line', line.toString());
+                    }
+                    return (originalRenderer)
+                        ? originalRenderer(tokens, index, options, env, self)
+                        : self.renderToken(tokens, index, options);
+                };
             }
             anchor(engine, {
 
