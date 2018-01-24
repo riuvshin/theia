@@ -6,6 +6,7 @@
  */
 
 import * as path from 'path';
+import * as upath from 'upath';
 import * as temp from 'temp';
 import * as fs from 'fs-extra';
 import { expect } from 'chai';
@@ -499,16 +500,18 @@ describe('git', async function () {
             await expectDiff('HEAD~4', 'HEAD', [
                 { pathSegment: 'folder/F1.txt', status: GitFileStatus.Deleted },
                 { pathSegment: 'folder/F2.txt', status: GitFileStatus.Modified },
-                { pathSegment: 'folder/F3.txt', status: GitFileStatus.New }], 'folder');
+                { pathSegment: 'folder/F3.txt', status: GitFileStatus.New }],
+                'folder');
 
             // Filter for a single file.
             await expectDiff('HEAD~4', 'HEAD~3', [], 'folder/F1.txt');
             await expectDiff('HEAD~4', 'HEAD', [
-                { pathSegment: 'folder/F1.txt', status: GitFileStatus.Deleted }], 'folder/F1.txt');
+                { pathSegment: 'folder/F1.txt', status: GitFileStatus.Deleted }],
+                'folder/F1.txt');
 
             // Filter for a non-existing file.
             await expectDiff('HEAD~4', 'HEAD~3', [], 'does not exist');
-
+            await expectDiff('HEAD~4', 'HEAD', [], 'does not exist');
         });
 
     });
@@ -516,7 +519,7 @@ describe('git', async function () {
 });
 
 function toPathSegment(repository: Repository, uri: string): string {
-    return path.relative(FileUri.fsPath(repository.localUri), FileUri.fsPath(uri));
+    return upath.relative(FileUri.fsPath(repository.localUri), FileUri.fsPath(uri));
 }
 
 interface ChangeDelta {
