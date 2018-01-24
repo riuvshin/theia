@@ -121,14 +121,15 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
     onUpdateRequest(msg: Message): void {
         super.onUpdateRequest(msg);
         if (this.resource) {
-            const uri = this.resource.uri;
-            const document = this.workspace.textDocuments.find(d => d.uri === uri.toString());
-            this.updateContent(document ? document.getText() : this.resource.readContents());
+            this.updateContent(this.resource);
         }
     }
 
-    protected async updateContent(content: MaybePromise<string>): Promise<void> {
-        const contentElement = await this.render(await content);
+    protected async updateContent(resource: Resource): Promise<void> {
+        const uri = resource.uri;
+        const document = this.workspace.textDocuments.find(d => d.uri === uri.toString());
+        const content: MaybePromise<string> = document ? document.getText() : resource.readContents();
+        const contentElement = await this.render(await content, uri);
         this.node.innerHTML = '';
         if (contentElement) {
             this.node.appendChild(contentElement);
@@ -139,12 +140,11 @@ export class PreviewWidget extends BaseWidget implements StatefulWidget {
         }
     }
 
-    protected async render(content: string): Promise<HTMLElement | undefined> {
+    protected async render(content: string, originUri: URI): Promise<HTMLElement | undefined> {
         if (!this.previewHandler || !this.resource) {
             return undefined;
         }
-        const baseUri = this.resource.uri.parent;
-        return this.previewHandler.renderContent({ content, baseUri });
+        return this.previewHandler.renderContent({ content, originUri });
     }
 
     storeState(): object {
