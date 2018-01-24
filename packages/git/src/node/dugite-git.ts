@@ -226,6 +226,33 @@ export class DugiteGit implements Git {
         });
     }
 
+    async diff(repository: Repository, options?: Git.Options.Diff): Promise<GitFileChange[]> {
+        const args = [
+            'diff',
+            '--name-status',
+            '-B', // This makes sure, that rewrites (such as rename) will be a pair of delete and create instead of the `R36 oldFileName newFileName` one-liner format.
+            '-C',
+            '-M'
+        ];
+        args.push(this.mapRange((options || {}).range));
+        if (options && options.uri) {
+            args.push(...['--', Path.relative(FileUri.fsPath(repository.localUri), FileUri.fsPath(options.uri))]);
+        }
+        const result = await this.exec(repository, args);
+        const changes: GitFileChange[] = [];
+        result.stdout.trim().split('\n').map(line => line.match(/\S+/g) || []).filter(fragments => fragments.length === 2).forEach(fragments => {
+            for (let i = 0; i < fragments.length; i = i + 2) {
+                const status = GitUtils.mapStatus(fragments[i]);
+                const uri = FileUri.create(Path.join(FileUri.fsPath(repository.localUri), fragments[i + 1])).toString();
+                changes.push({
+                    uri,
+                    status
+                });
+            }
+        });
+        return changes;
+    }
+
     private getCommitish(options?: Git.Options.Show): string {
         if (options && options.commitish) {
             return 'index' === options.commitish ? '' : options.commitish;
@@ -370,6 +397,21 @@ export class DugiteGit implements Git {
             case AppFileStatus.Renamed: return GitFileStatus.Renamed;
             default: throw new Error(`Unexpected application file status: ${toMap}`);
         }
+    }
+
+    private mapRange(toMap: Git.Options.Range | undefined): string {
+        let range = 'HEAD';
+        if (toMap) {
+            if (toMap.toRevision) {
+                range = toMap.toRevision;
+            }
+            if (typeof toMap.fromRevision === 'number') {
+                range = `${range}~${toMap.fromRevision}..${range}`;
+            } else if (typeof toMap.fromRevision === 'string') {
+                range = `${toMap.fromRevision}..${range}`;
+            }
+        }
+        return range;
     }
 
     private getFsPath(repository: Repository | string): string {
