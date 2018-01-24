@@ -40,8 +40,8 @@ export class SidePanelHandler {
     @inject(TabBarRendererFactory) protected tabBarRendererFactory: () => TabBarRenderer;
 
     protected side: 'left' | 'right' | 'bottom';
-    protected lastActiveTabIndex: number = -1;
-    protected lastSplitPosition: number = -1;
+    protected lastActiveTabIndex?: number;
+    protected lastPanelSize?: number;
 
     tabBar: SideTabBar;
     dockPanel: TheiaDockPanel;
@@ -186,9 +186,11 @@ export class SidePanelHandler {
                 this.tabBar.currentTitle = widget.title;
             }
             return widget;
-        } else if (this.tabBar.titles.length > 0 && !this.tabBar.currentTitle) {
+        } else if (this.tabBar.currentTitle) {
+            return this.tabBar.currentTitle.owner;
+        } else if (this.tabBar.titles.length > 0) {
             let index = this.lastActiveTabIndex;
-            if (index < 0) {
+            if (!index) {
                 index = 0;
             } else if (index >= this.tabBar.titles.length) {
                 index = this.tabBar.titles.length - 1;
@@ -196,6 +198,14 @@ export class SidePanelHandler {
             const title = this.tabBar.titles[index];
             this.tabBar.currentTitle = title;
             return title.owner;
+        } else {
+            // Reveal the tab bar and dock panel even if there is no widget
+            // The next call to `refreshVisibility` will collapse them again
+            this.container.removeClass(COLLAPSED_CLASS);
+            this.container.show();
+            this.tabBar.show();
+            this.dockPanel.show();
+            this.setPanelSize(100);
         }
     }
 
@@ -203,7 +213,11 @@ export class SidePanelHandler {
      * Collapse the sidebar so no items are expanded.
      */
     collapse(): void {
-        this.tabBar.currentTitle = null;
+        if (this.tabBar.currentTitle) {
+            this.tabBar.currentTitle = null;
+        } else {
+            this.refreshVisibility();
+        }
     }
 
     /**
@@ -227,11 +241,11 @@ export class SidePanelHandler {
         const hideDockPanel = currentTitle === null;
         if (hideDockPanel) {
             this.container.addClass(COLLAPSED_CLASS);
-            this.savePanelWidth();
+            this.lastPanelSize = this.getPanelSize();
         } else {
             this.container.removeClass(COLLAPSED_CLASS);
-            if (this.dockPanel.isHidden) {
-                this.restorePanelWidth();
+            if (this.dockPanel.isHidden && this.lastPanelSize) {
+                this.setPanelSize(this.lastPanelSize);
             }
         }
         this.container.setHidden(hideSideBar && hideDockPanel);
@@ -242,22 +256,28 @@ export class SidePanelHandler {
         }
     }
 
-    protected savePanelWidth() {
+    protected getPanelSize(): number | undefined {
         const parent = this.container.parent;
         if (parent instanceof SplitPanel) {
-            let index = parent.widgets.indexOf(this.container);
-            if (this.side === 'right') {
-                index--;
+            const index = parent.widgets.indexOf(this.container);
+            if (this.side === 'left') {
+                const handle = parent.handles[index];
+                if (!handle.classList.contains('p-mod-hidden')) {
+                    return handle.offsetLeft;
+                }
+            } else if (this.side === 'right') {
+                const handle = parent.handles[index - 1];
+                if (!handle.classList.contains('p-mod-hidden')) {
+                    const parentWidth = parent.node.clientWidth;
+                    return parentWidth - handle.offsetLeft;
+                }
             }
-            const handle = parent.handles[index];
-            this.lastSplitPosition = handle.offsetLeft;
         }
     }
 
-    protected restorePanelWidth() {
+    protected setPanelSize(size: number): void {
         const parent = this.container.parent;
-        let position = this.lastSplitPosition;
-        if (parent instanceof SplitPanel && position > 0) {
+        if (parent instanceof SplitPanel && size > 0) {
             let index = parent.widgets.indexOf(this.container);
             if (this.side === 'right') {
                 index--;
@@ -265,10 +285,11 @@ export class SidePanelHandler {
 
             const parentWidth = parent.node.clientWidth;
             const maxWidth = parentWidth / 3;
-            if (this.side === 'left' && position > maxWidth) {
-                position = maxWidth;
-            } else if (this.side === 'right' && position < parentWidth - maxWidth) {
-                position = parentWidth - maxWidth;
+            let position: number;
+            if (this.side === 'left') {
+                position = Math.min(size, maxWidth);
+            } else if (this.side === 'right') {
+                position = parentWidth - Math.min(size, maxWidth);
             }
 
             window.requestAnimationFrame(() => {
@@ -389,12 +410,7 @@ export class SidePanelHandler {
                 isExpanded: handler.tabBar.currentTitle !== null
             });
             if (handler.container.isAttached) {
-                if (handler.tabBar.titles.length > 0) {
-                    handler.expand();
-                } else {
-                    handler.container.show();
-                    handler.tabBar.show();
-                }
+                handler.expand();
             }
         }
         return previousState;

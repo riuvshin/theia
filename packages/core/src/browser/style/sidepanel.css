@@ -68,10 +68,6 @@
   max-width: var(--theia-private-sidebar-tab-width);
 }
 
-#theia-left-stack > .p-DockPanel-widget, #theia-right-stack > .p-DockPanel-widget {
-  min-width: 200px;
-}
-
 #theia-left-stack {
   border-right: var(--theia-border-width) solid var(--theia-border-color1);
 }

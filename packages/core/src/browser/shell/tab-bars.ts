@@ -225,18 +225,6 @@ export class SideTabBar extends TabBar<Widget> {
 
     handleEvent(event: Event): void {
         switch (event.type) {
-            case 'p-dragenter':
-                this.onDragEnter(event as IDragEvent);
-                break;
-            case 'p-dragleave':
-                this.onDragLeave(event as IDragEvent);
-                break;
-            case 'p-dragover':
-                this.onDragOver(event as IDragEvent);
-                break;
-            case 'p-drop':
-                this.onDrop(event as IDragEvent);
-                break;
             case 'mousedown':
                 this.onMouseDown(event as MouseEvent);
                 super.handleEvent(event);
@@ -252,72 +240,6 @@ export class SideTabBar extends TabBar<Widget> {
             default:
                 super.handleEvent(event);
         }
-    }
-
-    private onDragEnter(event: IDragEvent): void {
-        if (event.mimeData.hasData('application/vnd.phosphor.widget-factory')) {
-            event.preventDefault();
-            event.stopPropagation();
-        }
-    }
-
-    private onDragOver(event: IDragEvent): void {
-        event.preventDefault();
-        event.stopPropagation();
-
-        // Don't accept any drop if the bar is not empty
-        // (in that case you can drop into the related dock panel)
-        if (this.titles.length > 0) {
-            event.dropAction = 'none';
-        } else {
-            this.showOverlay(event.clientX, event.clientY);
-            event.dropAction = event.proposedAction;
-        }
-    }
-
-    private onDragLeave(event: IDragEvent): void {
-        event.preventDefault();
-        event.stopPropagation();
-
-        const related = event.relatedTarget as HTMLElement;
-        if (!related || !this.node.contains(related)) {
-            this.overlay.hide(0);
-        }
-    }
-
-    private onDrop(event: IDragEvent): void {
-        event.preventDefault();
-        event.stopPropagation();
-
-        this.overlay.hide(0);
-
-        // Don't accept any drop if the bar is not empty
-        // (in that case you can drop into the related dock panel)
-        if (this.titles.length > 0 || event.proposedAction === 'none') {
-            event.dropAction = 'none';
-            return;
-        }
-
-        // Create a widget from the event mime data
-        const factory = event.mimeData.getData('application/vnd.phosphor.widget-factory');
-        if (typeof factory !== 'function') {
-            event.dropAction = 'none';
-            return;
-        }
-        const widget = factory();
-        if (!(widget instanceof Widget)) {
-            event.dropAction = 'none';
-            return;
-        }
-        if (widget.contains(this)) {
-            event.dropAction = 'none';
-            return;
-        }
-
-        // Accept the drop and add the widget
-        event.dropAction = event.proposedAction;
-        this.addTab(widget.title);
-        this.currentTitle = widget.title;
     }
 
     private onMouseDown(event: MouseEvent): void {
