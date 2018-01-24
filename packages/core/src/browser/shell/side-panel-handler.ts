@@ -6,8 +6,8 @@
  */
 
 import { injectable, inject } from 'inversify';
-import { ArrayExt, find, map, toArray } from '@phosphor/algorithm';
-import { TabBar, Widget, DockPanel, Title, Panel, BoxPanel, BoxLayout } from '@phosphor/widgets';
+import { find, map, toArray, some } from '@phosphor/algorithm';
+import { TabBar, Widget, DockPanel, Title, Panel, BoxPanel, BoxLayout, SplitPanel, SplitLayout } from '@phosphor/widgets';
 import { Signal } from '@phosphor/signaling';
 import { MimeData } from '@phosphor/coreutils';
 import { Drag } from '@phosphor/dragdrop';
@@ -24,24 +24,27 @@ const COLLAPSED_CLASS = 'theia-mod-collapsed';
 
 export const SidePanelHandlerFactory = Symbol('SidePanelHandlerFactory');
 
-const rankProperty = new AttachedProperty<Widget, number | undefined>({
-    name: 'sidePanelRank',
-    create: () => undefined
-});
-
 /**
  * A class which manages a dock panel and a related side bar.
  */
 @injectable()
 export class SidePanelHandler {
 
+    private static readonly rankProperty = new AttachedProperty<Widget, number | undefined>({
+        name: 'sidePanelRank',
+        create: () => undefined
+    });
+
+    private static readonly globalHandlers: SidePanelHandler[] = [];
+
     @inject(TabBarRendererFactory) protected tabBarRendererFactory: () => TabBarRenderer;
 
     protected side: 'left' | 'right' | 'bottom';
     protected lastActiveTabIndex: number = -1;
+    protected lastSplitPosition: number = -1;
 
     tabBar: SideTabBar;
-    dockPanel: SideDockPanel;
+    dockPanel: TheiaDockPanel;
     container: Panel;
 
     /**
@@ -52,6 +55,14 @@ export class SidePanelHandler {
         this.tabBar = this.createSideBar();
         this.dockPanel = this.createSidePanel();
         this.container = this.createContainer();
+
+        SidePanelHandler.globalHandlers.push(this);
+        this.container.disposed.connect(() => {
+            const index = SidePanelHandler.globalHandlers.indexOf(this);
+            if (index >= 0) {
+                SidePanelHandler.globalHandlers.splice(index, 1);
+            }
+        });
 
         this.refreshVisibility();
     }
@@ -77,6 +88,7 @@ export class SidePanelHandler {
             sideBar.addClass(MAIN_BOTTOM_AREA_CLASS);
         }
 
+        sideBar.tabAdded.connect(this.onTabAdded, this);
         sideBar.currentChanged.connect(this.onCurrentTabChanged, this);
         sideBar.tabActivateRequested.connect(this.onTabActivateRequested, this);
         sideBar.tabCloseRequested.connect(this.onTabCloseRequested, this);
@@ -85,8 +97,8 @@ export class SidePanelHandler {
         return sideBar;
     }
 
-    protected createSidePanel(): SideDockPanel {
-        const sidePanel = new SideDockPanel({
+    protected createSidePanel(): TheiaDockPanel {
+        const sidePanel = new TheiaDockPanel({
             mode: 'single-document'
         });
         sidePanel.id = 'theia-' + this.side + '-stack';
@@ -126,7 +138,7 @@ export class SidePanelHandler {
         const currentTitle = this.tabBar.currentTitle;
         const items = toArray(map(this.tabBar.titles, title => <SidePanel.WidgetItem>{
             widget: title.owner,
-            rank: rankProperty.get(title.owner),
+            rank: SidePanelHandler.rankProperty.get(title.owner),
             expanded: title === currentTitle
         }));
         return { type: 'sidebar', items };
@@ -201,7 +213,7 @@ export class SidePanelHandler {
      */
     addWidget(widget: Widget, options: SidePanel.WidgetOptions): void {
         if (options.rank) {
-            rankProperty.set(widget, options.rank);
+            SidePanelHandler.rankProperty.set(widget, options.rank);
         }
         this.dockPanel.addWidget(widget);
     }
@@ -213,16 +225,65 @@ export class SidePanelHandler {
         const hideSideBar = this.tabBar.titles.length === 0;
         const currentTitle = this.tabBar.currentTitle;
         const hideDockPanel = currentTitle === null;
-        this.container.setHidden(hideSideBar && hideDockPanel);
         if (hideDockPanel) {
             this.container.addClass(COLLAPSED_CLASS);
+            this.savePanelWidth();
         } else {
             this.container.removeClass(COLLAPSED_CLASS);
+            if (this.dockPanel.isHidden) {
+                this.restorePanelWidth();
+            }
         }
+        this.container.setHidden(hideSideBar && hideDockPanel);
         this.tabBar.setHidden(hideSideBar);
         this.dockPanel.setHidden(hideDockPanel);
         if (currentTitle) {
             this.dockPanel.selectWidget(currentTitle.owner);
+        }
+    }
+
+    protected savePanelWidth() {
+        const parent = this.container.parent;
+        if (parent instanceof SplitPanel) {
+            let index = parent.widgets.indexOf(this.container);
+            if (this.side === 'right') {
+                index--;
+            }
+            const handle = parent.handles[index];
+            this.lastSplitPosition = handle.offsetLeft;
+        }
+    }
+
+    protected restorePanelWidth() {
+        const parent = this.container.parent;
+        let position = this.lastSplitPosition;
+        if (parent instanceof SplitPanel && position > 0) {
+            let index = parent.widgets.indexOf(this.container);
+            if (this.side === 'right') {
+                index--;
+            }
+
+            const parentWidth = parent.node.clientWidth;
+            const maxWidth = parentWidth / 3;
+            if (this.side === 'left' && position > maxWidth) {
+                position = maxWidth;
+            } else if (this.side === 'right' && position < parentWidth - maxWidth) {
+                position = parentWidth - maxWidth;
+            }
+
+            window.requestAnimationFrame(() => {
+                (parent.layout as SplitLayout).moveHandle(index, position);
+            });
+        }
+    }
+
+    /**
+     * Handle a `tabAdded` signal from the sidebar.
+     */
+    protected onTabAdded(sender: SideTabBar, title: Title<Widget>): void {
+        const widget = title.owner;
+        if (!some(this.dockPanel.widgets(), w => w === widget)) {
+            this.dockPanel.addWidget(widget);
         }
     }
 
@@ -258,6 +319,9 @@ export class SidePanelHandler {
         // Release the tab bar's hold on the mouse
         sender.releaseMouse();
 
+        // Make all side bars visible so we can drag the detached widget into them
+        const previousState = SidePanelHandler.showAllSideBars();
+
         // Create and start a drag to move the selected tab to another panel
         const mimeData = new MimeData();
         mimeData.setData('application/vnd.phosphor.widget-factory', () => title.owner);
@@ -271,6 +335,7 @@ export class SidePanelHandler {
         tab.classList.add('p-mod-hidden');
         drag.start(clientX, clientY).then(() => {
             tab.classList.remove('p-mod-hidden');
+            SidePanelHandler.resetAllSideBars(previousState, title);
         });
     }
 
@@ -285,19 +350,21 @@ export class SidePanelHandler {
      * Handle the `widgetAdded` signal from the dock panel.
      */
     protected onWidgetAdded(sender: DockPanel, widget: Widget): void {
-        const rank = rankProperty.get(widget);
         const titles = this.tabBar.titles;
-        let index = titles.length;
-        if (rank !== undefined) {
-            for (let i = index - 1; i >= 0; i--) {
-                const r = rankProperty.get(titles[i].owner);
-                if (r !== undefined && r > rank) {
-                    index = i;
+        if (!find(titles, t => t.owner === widget)) {
+            const rank = SidePanelHandler.rankProperty.get(widget);
+            let index = titles.length;
+            if (rank !== undefined) {
+                for (let i = index - 1; i >= 0; i--) {
+                    const r = SidePanelHandler.rankProperty.get(titles[i].owner);
+                    if (r !== undefined && r > rank) {
+                        index = i;
+                    }
                 }
             }
+            this.tabBar.insertTab(index, widget.title);
+            this.refreshVisibility();
         }
-        this.tabBar.insertTab(index, widget.title);
-        this.refreshVisibility();
     }
 
     /*
@@ -313,6 +380,41 @@ export class SidePanelHandler {
     protected onWidgetRemoved(sender: DockPanel, widget: Widget): void {
         this.tabBar.removeTab(widget.title);
         this.refreshVisibility();
+    }
+
+    static showAllSideBars(): SidePanel.SideBarState[] {
+        const previousState: SidePanel.SideBarState[] = [];
+        for (const handler of SidePanelHandler.globalHandlers) {
+            previousState.push({
+                isExpanded: handler.tabBar.currentTitle !== null
+            });
+            if (handler.container.isAttached) {
+                if (handler.tabBar.titles.length > 0) {
+                    handler.expand();
+                } else {
+                    handler.container.show();
+                    handler.tabBar.show();
+                }
+            }
+        }
+        return previousState;
+    }
+
+    static resetAllSideBars(previousState: SidePanel.SideBarState[] = [], activeTitle?: Title<Widget>): void {
+        for (let i = 0; i < SidePanelHandler.globalHandlers.length; i++) {
+            const handler = SidePanelHandler.globalHandlers[i];
+            const state = i < previousState.length ? previousState[i] : undefined;
+            if (handler.container.isAttached) {
+                if (state) {
+                    if (state.isExpanded) {
+                        handler.expand();
+                    } else if (!activeTitle || handler.tabBar.currentTitle !== activeTitle) {
+                        handler.collapse();
+                    }
+                }
+                handler.refreshVisibility();
+            }
+        }
     }
 }
 
@@ -346,19 +448,57 @@ export namespace SidePanel {
          */
         expanded?: boolean;
     }
+
+    export interface SideBarState {
+        isExpanded: boolean;
+    }
 }
 
 /**
- * A specialized dock panel for side areas.
+ * A specialized dock panel that supports side areas.
  */
-export class SideDockPanel extends DockPanel {
+export class TheiaDockPanel extends DockPanel {
+
+    private __drag?: Drag;
+    private __draggedWidget?: Widget;
+    private previousSideBarState?: SidePanel.SideBarState[];
+
+    constructor(options?: DockPanel.IOptions) {
+        super(options);
+        // Override the _drag property from DockPanel with an accessor property
+        Object.defineProperty(this, '_drag', {
+            get: () => this.__drag,
+            set: (drag: Drag) => {
+                if (drag) {
+                    // A drag has been started
+                    window.requestAnimationFrame(() => {
+                        this.previousSideBarState = SidePanelHandler.showAllSideBars();
+                    });
+                    const factory = drag.mimeData.getData('application/vnd.phosphor.widget-factory');
+                    if (typeof factory === 'function') {
+                        const widget = factory();
+                        if (widget instanceof Widget) {
+                            this.__draggedWidget = widget;
+                        }
+                    }
+                } else {
+                    // A drag has been completed
+                    const activeTitle = this.__draggedWidget ? this.__draggedWidget.title : undefined;
+                    SidePanelHandler.resetAllSideBars(this.previousSideBarState, activeTitle);
+                    this.previousSideBarState = undefined;
+                    this.__draggedWidget = undefined;
+                }
+                this.__drag = drag;
+            }
+        });
+    }
 
     readonly widgetAdded = new Signal<this, Widget>(this);
     readonly widgetActivated = new Signal<this, Widget>(this);
     readonly widgetRemoved = new Signal<this, Widget>(this);
 
     addWidget(widget: Widget, options?: DockPanel.IAddOptions): void {
-        if (widget.parent === this) {
+        if (this.mode === 'single-document' && widget.parent === this) {
             return;
         }
         super.addWidget(widget, options);

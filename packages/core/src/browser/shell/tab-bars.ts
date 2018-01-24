@@ -5,7 +5,6 @@
  * You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
  */
 
-import { injectable, inject } from 'inversify';
 import { TabBar, Title, Widget, DockPanel } from '@phosphor/widgets';
 import { VirtualElement, h, VirtualDOM, ElementInlineStyle } from '@phosphor/virtualdom';
 import { MenuPath } from '../../common';
@@ -14,7 +13,7 @@ import { Signal } from '@phosphor/signaling';
 import { Message } from '@phosphor/messaging';
 import { ArrayExt } from '@phosphor/algorithm';
 import { ElementExt } from '@phosphor/domutils';
-// import { IDragEvent } from '@phosphor/dragdrop';
+import { IDragEvent } from '@phosphor/dragdrop';
 
 /** The class name added to hidden content nodes, which are required to render vertical side bars. */
 const HIDDEN_CONTENT_CLASS = 'theia-TabBar-hidden-content';
@@ -39,12 +38,12 @@ export interface SideBarRenderData extends TabBar.IRenderData<Widget> {
  */
 export class TabBarRenderer extends TabBar.Renderer {
 
+    tabBar?: TabBar<Widget>;
+    contextMenuPath?: MenuPath;
+
     constructor(protected readonly contextMenuRenderer: ContextMenuRenderer) {
         super();
     }
-
-    tabBar?: TabBar<Widget>;
-    contextMenuPath?: MenuPath;
 
     renderTab(data: SideBarRenderData): VirtualElement {
         const title = data.title;
@@ -116,13 +115,14 @@ export interface TabBarDropTarget {
     nextRect?: ClientRect;
 }
 
-const OVERLAY_HEIGHT = 3;
+const OVERLAY_PAD = 3;
 
 /**
  * A specialized tab bar for side areas.
  */
 export class SideTabBar extends TabBar<Widget> {
 
+    readonly tabAdded = new Signal<this, Title<Widget>>(this);
     readonly collapseRequested = new Signal<this, Title<Widget>>(this);
 
     protected overlay: DockPanel.Overlay;
@@ -149,6 +149,12 @@ export class SideTabBar extends TabBar<Widget> {
         super.dispose();
     }
 
+    insertTab(index: number, value: Title<Widget> | Title.IOptions<Widget>): Title<Widget> {
+        const result = super.insertTab(index, value);
+        this.tabAdded.emit(result);
+        return result;
+    }
+
     protected onUpdateRequest(msg: Message): void {
         this.renderTabs(this.hiddenContentNode);
         window.requestAnimationFrame(() => {
@@ -170,7 +176,7 @@ export class SideTabBar extends TabBar<Widget> {
         });
     }
 
-    protected renderTabs(host: HTMLElement, labelData?: LabelRenderData[]) {
+    protected renderTabs(host: HTMLElement, labelData?: LabelRenderData[]): void {
         const titles = this.titles;
         const n = titles.length;
         const renderer = this.renderer as TabBarRenderer;
@@ -187,43 +193,14 @@ export class SideTabBar extends TabBar<Widget> {
     }
 
     protected showOverlay(clientX: number, clientY: number) {
-        const { lastRect, nextRect } = this.findDropTarget(clientX, clientY);
         const barRect = this.node.getBoundingClientRect();
-        const box = ElementExt.boxSizing(this.node);
-        let overlayPos = box.paddingTop;
-        if (lastRect !== undefined) {
-            overlayPos = lastRect.bottom - barRect.top - 1;
-        } else if (nextRect !== undefined) {
-            overlayPos = nextRect.top - barRect.top;
-        }
-        const x = {
-            top: overlayPos,
-            bottom: barRect.height - (overlayPos + OVERLAY_HEIGHT),
-            left: box.paddingLeft,
-            right: box.paddingRight
-        };
-        this.overlay.show(x);
-    }
-
-    protected findDropTarget(clientX: number, clientY: number): TabBarDropTarget {
-        const tabs = this.contentNode.children;
-        let lastRect: ClientRect | undefined;
-        let nextRect: ClientRect | undefined;
-        let index = 0;
-        for (let i = 0; i < tabs.length; i++) {
-            if (!tabs[i].classList.contains('p-mod-hidden')) {
-                const rect = tabs[i].getBoundingClientRect();
-                const centerHeight = rect.top + rect.height / 2;
-                if (centerHeight <= clientY) {
-                    lastRect = rect;
-                } else {
-                    nextRect = rect;
-                    break;
-                }
-                index++;
-            }
-        }
-        return { lastRect, nextRect, index };
+        const overlayWidth = barRect.width - 2 * OVERLAY_PAD;
+        this.overlay.show({
+            top: OVERLAY_PAD,
+            bottom: barRect.height - (OVERLAY_PAD + overlayWidth),
+            left: OVERLAY_PAD,
+            right: OVERLAY_PAD
+        });
     }
 
     protected onBeforeAttach(msg: Message): void {
@@ -249,17 +226,17 @@ export class SideTabBar extends TabBar<Widget> {
     handleEvent(event: Event): void {
         switch (event.type) {
             case 'p-dragenter':
-            //     this.onDragEnter(event as IDragEvent);
-            //     break;
-            // case 'p-dragleave':
-            //     this.onDragLeave(event as IDragEvent);
-            //     break;
-            // case 'p-dragover':
-            //     this.onDragOver(event as IDragEvent);
-            //     break;
-            // case 'p-drop':
-            //     this.onDrop(event as IDragEvent);
-            //     break;
+                this.onDragEnter(event as IDragEvent);
+                break;
+            case 'p-dragleave':
+                this.onDragLeave(event as IDragEvent);
+                break;
+            case 'p-dragover':
+                this.onDragOver(event as IDragEvent);
+                break;
+            case 'p-drop':
+                this.onDrop(event as IDragEvent);
+                break;
             case 'mousedown':
                 this.onMouseDown(event as MouseEvent);
                 super.handleEvent(event);
@@ -277,7 +254,6 @@ export class SideTabBar extends TabBar<Widget> {
         }
     }
 
-    /*
     private onDragEnter(event: IDragEvent): void {
         if (event.mimeData.hasData('application/vnd.phosphor.widget-factory')) {
             event.preventDefault();
@@ -288,8 +264,15 @@ export class SideTabBar extends TabBar<Widget> {
     private onDragOver(event: IDragEvent): void {
         event.preventDefault();
         event.stopPropagation();
-        this.showOverlay(event.clientX, event.clientY);
-        event.dropAction = event.proposedAction;
+
+        // Don't accept any drop if the bar is not empty
+        // (in that case you can drop into the related dock panel)
+        if (this.titles.length > 0) {
+            event.dropAction = 'none';
+        } else {
+            this.showOverlay(event.clientX, event.clientY);
+            event.dropAction = event.proposedAction;
+        }
     }
 
     private onDragLeave(event: IDragEvent): void {
@@ -308,6 +291,13 @@ export class SideTabBar extends TabBar<Widget> {
 
         this.overlay.hide(0);
 
+        // Don't accept any drop if the bar is not empty
+        // (in that case you can drop into the related dock panel)
+        if (this.titles.length > 0 || event.proposedAction === 'none') {
+            event.dropAction = 'none';
+            return;
+        }
+
         // Create a widget from the event mime data
         const factory = event.mimeData.getData('application/vnd.phosphor.widget-factory');
         if (typeof factory !== 'function') {
@@ -324,21 +314,11 @@ export class SideTabBar extends TabBar<Widget> {
             return;
         }
 
-        // Accept the drop and insert the widget
+        // Accept the drop and add the widget
         event.dropAction = event.proposedAction;
-        const { index } = this.findDropTarget(event.clientX, event.clientY);
-        const previousIndex = ArrayExt.findFirstIndex(this.titles, t => t.owner === widget);
-        if (previousIndex >= 0) {
-            if (index !== previousIndex) {
-                this.removeTab(widget.title);
-                this.insertTab(index, widget.title);
-            }
-        } else {
-            // TODO
-        }
-        this.currentIndex = index;
+        this.addTab(widget.title);
+        this.currentTitle = widget.title;
     }
-    */
 
     private onMouseDown(event: MouseEvent): void {
         // Check for left mouse button and current drag status

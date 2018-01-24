@@ -14,7 +14,7 @@ import {
 } from '@phosphor/widgets';
 import { Saveable } from '../saveable';
 import { StatusBarImpl, StatusBarLayoutData } from '../status-bar/status-bar';
-import { SidePanelHandler, SidePanel, MAIN_BOTTOM_AREA_CLASS, SidePanelHandlerFactory } from './side-panel-handler';
+import { SidePanelHandler, SidePanel, MAIN_BOTTOM_AREA_CLASS, SidePanelHandlerFactory, TheiaDockPanel } from './side-panel-handler';
 import { TabBarRendererFactory, TabBarRenderer, SHELL_TABBAR_CONTEXT_MENU } from './tab-bars';
 
 /** The class name added to ApplicationShell instances. */
@@ -107,7 +107,7 @@ export class ApplicationShell extends Widget {
      * Create the dock panel, which holds the main area for widgets organized with tabs.
      */
     protected createMainPanel(dockPanelRenderer: DockLayout.IRenderer): DockPanel {
-        const dockPanel = new DockPanel({ renderer: dockPanelRenderer });
+        const dockPanel = new TheiaDockPanel({ renderer: dockPanelRenderer });
         dockPanel.id = 'theia-main-content-panel';
         dockPanel.spacing = 0;
         return dockPanel;
