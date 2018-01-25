@@ -330,12 +330,20 @@ export class SidePanelHandler {
         // Release the tab bar's hold on the mouse
         sender.releaseMouse();
 
+        // Clone the selected tab and use that as drag image
+        const clonedTab = tab.cloneNode(true) as HTMLElement;
+        clonedTab.style.width = null;
+        clonedTab.style.height = null;
+        const label = clonedTab.getElementsByClassName('p-TabBar-tabLabel')[0] as HTMLElement;
+        label.style.width = null;
+        label.style.height = null;
+
         // Create and start a drag to move the selected tab to another panel
         const mimeData = new MimeData();
         mimeData.setData('application/vnd.phosphor.widget-factory', () => title.owner);
         const drag = new Drag({
             mimeData,
-            dragImage: tab.cloneNode(true) as HTMLElement,
+            dragImage: clonedTab,
             proposedAction: 'move',
             supportedActions: 'move',
         });

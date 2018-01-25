@@ -81,7 +81,6 @@ export class TabBarRenderer extends TabBar.Renderer {
             style = {
                 width: `${data.labelData.width}px`,
                 height: `${data.labelData.height}px`,
-                minHeight: `${data.labelData.height}px`
             };
         }
         return h.div({ className: 'p-TabBar-tabLabel', style }, data.title.label);
@@ -114,19 +113,24 @@ export interface TabBarDropTarget {
     nextRect?: ClientRect;
 }
 
-const OVERLAY_PAD = 3;
-
 /**
  * A specialized tab bar for side areas.
  */
 export class SideTabBar extends TabBar<Widget> {
+
+    static readonly OVERLAY_PAD = 3;
+    static readonly DRAG_THRESHOLD = 5;
 
     readonly tabAdded = new Signal<this, Title<Widget>>(this);
     readonly collapseRequested = new Signal<this, Title<Widget>>(this);
 
     protected overlay: DockPanel.Overlay;
 
-    private mouseDownTabIndex = -1;
+    private mouseData?: {
+        pressX: number,
+        pressY: number,
+        mouseDownTabIndex: number
+    };
 
     constructor(options?: TabBar.IOptions<Widget>) {
         super(options);
@@ -193,12 +197,13 @@ export class SideTabBar extends TabBar<Widget> {
 
     protected showOverlay(clientX: number, clientY: number) {
         const barRect = this.node.getBoundingClientRect();
-        const overlayWidth = barRect.width - 2 * OVERLAY_PAD;
+        const padding = SideTabBar.OVERLAY_PAD;
+        const overlayWidth = barRect.width - 2 * padding;
         this.overlay.show({
-            top: OVERLAY_PAD,
-            bottom: barRect.height - (OVERLAY_PAD + overlayWidth),
-            left: OVERLAY_PAD,
-            right: OVERLAY_PAD
+            top: padding,
+            bottom: barRect.height - (padding + overlayWidth),
+            left: padding,
+            right: padding
         });
     }
 
@@ -242,8 +247,8 @@ export class SideTabBar extends TabBar<Widget> {
     }
 
     private onMouseDown(event: MouseEvent): void {
-        // Check for left mouse button and current drag status
-        if (event.button !== 0 || (this as any)._dragData) {
+        // Check for left mouse button and current mouse status
+        if (event.button !== 0 || this.mouseData) {
             return;
         }
 
@@ -260,18 +265,22 @@ export class SideTabBar extends TabBar<Widget> {
             return;
         }
 
-        this.mouseDownTabIndex = index;
+        this.mouseData = {
+            pressX: event.clientX,
+            pressY: event.clientY,
+            mouseDownTabIndex: index
+        };
     }
 
     private onMouseUp(event: MouseEvent): void {
-        // Check for left mouse button
-        if (event.button !== 0) {
+        // Check for left mouse button and current mouse status
+        if (event.button !== 0 || !this.mouseData) {
             return;
         }
 
         // Check whether the mouse went up on the current tab
-        const mouseDownTabIndex = this.mouseDownTabIndex;
-        this.mouseDownTabIndex = -1;
+        const mouseDownTabIndex = this.mouseData.mouseDownTabIndex;
+        this.mouseData = undefined;
         const tabs = this.contentNode.children;
         const index = ArrayExt.findFirstIndex(tabs, tab => ElementExt.hitTest(tab, event.clientX, event.clientY));
         if (index < 0 || index !== mouseDownTabIndex) {
@@ -283,12 +292,18 @@ export class SideTabBar extends TabBar<Widget> {
     }
 
     private onMouseMove(event: MouseEvent): void {
-        // Check for left mouse button
-        if (event.button !== 0) {
+        // Check for left mouse button and current mouse status
+        if (event.button !== 0 || !this.mouseData) {
             return;
         }
 
-        this.mouseDownTabIndex = -1;
+        const data = this.mouseData;
+        const dx = Math.abs(event.clientX - data.pressX);
+        const dy = Math.abs(event.clientY - data.pressY);
+        const threshold = SideTabBar.DRAG_THRESHOLD;
+        if (dx >= threshold || dy >= threshold) {
+            this.mouseData = undefined;
+        }
     }
 
 }

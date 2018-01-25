@@ -189,7 +189,7 @@ export class ApplicationShell extends Widget {
         const modifiedPanelState = {
             leftExpanded: false,
             rightExpanded: false
-        }
+        };
         this.widgetDragListener = event => {
             if (event.type === 'mousemove') {
                 const { clientX } = event as MouseEvent;
