@@ -12,6 +12,7 @@ import {
     BoxLayout, BoxPanel, DockLayout, DockPanel, FocusTracker, Layout, Panel, SplitLayout,
     SplitPanel, TabBar, Widget, Title
 } from '@phosphor/widgets';
+import { Drag } from '@phosphor/dragdrop';
 import { Saveable } from '../saveable';
 import { StatusBarImpl, StatusBarLayoutData } from '../status-bar/status-bar';
 import { SidePanelHandler, SidePanel, MAIN_BOTTOM_AREA_CLASS, SidePanelHandlerFactory, TheiaDockPanel } from './side-panel-handler';
@@ -61,8 +62,10 @@ export class ApplicationShell extends Widget {
     protected leftPanelHandler: SidePanelHandler;
     protected rightPanelHandler: SidePanelHandler;
     protected bottomPanelHandler: SidePanelHandler;
+    protected sidePanelExpandThreshold = SidePanel.EMPTY_PANEL_SIZE;
 
     private readonly tracker = new FocusTracker<Widget>();
+    private widgetDragListener?: (event: Event) => void;
 
     readonly currentChanged = new Signal<this, FocusTracker.IChangedArgs<Widget>>(this);
     readonly activeChanged = new Signal<this, FocusTracker.IChangedArgs<Widget>>(this);
@@ -92,6 +95,9 @@ export class ApplicationShell extends Widget {
 
         this.tracker.currentChanged.connect(this.onCurrentChanged, this);
         this.tracker.activeChanged.connect(this.onActiveChanged, this);
+
+        SidePanel.onDragStarted(this.onWidgetDragStarted.bind(this));
+        SidePanel.onDragEnded(this.onWidgetDragEnded.bind(this));
     }
 
     /**
@@ -170,6 +176,53 @@ export class ApplicationShell extends Widget {
             [0, 1, 0],
             { direction: 'top-to-bottom', spacing: 0 }
         );
+    }
+
+    protected onWidgetDragStarted(drag: Drag) {
+        if (this.widgetDragListener) {
+            return;
+        }
+        const initialPanelState = {
+            leftCollapsed: this.leftPanelHandler.tabBar.currentTitle === null,
+            rightCollapsed: this.rightPanelHandler.tabBar.currentTitle === null
+        };
+        const modifiedPanelState = {
+            leftExpanded: false,
+            rightExpanded: false
+        }
+        this.widgetDragListener = event => {
+            if (event.type === 'mousemove') {
+                const { clientX } = event as MouseEvent;
+                if (clientX <= this.sidePanelExpandThreshold) {
+                    if (!modifiedPanelState.leftExpanded) {
+                        this.leftPanelHandler.expand();
+                        modifiedPanelState.leftExpanded = true;
+                    }
+                } else if (initialPanelState.leftCollapsed && modifiedPanelState.leftExpanded) {
+                    this.leftPanelHandler.collapse();
+                    modifiedPanelState.leftExpanded = false;
+                }
+                if (clientX >= window.innerWidth - this.sidePanelExpandThreshold) {
+                    if (!modifiedPanelState.rightExpanded) {
+                        this.rightPanelHandler.expand();
+                        modifiedPanelState.rightExpanded = true;
+                    }
+                } else if (initialPanelState.rightCollapsed && modifiedPanelState.rightExpanded) {
+                    this.rightPanelHandler.collapse();
+                    modifiedPanelState.rightExpanded = false;
+                }
+            }
+        };
+        document.addEventListener('mousemove', this.widgetDragListener, { capture: true });
+    }
+
+    protected onWidgetDragEnded(drag: Drag) {
+        if (this.widgetDragListener) {
+            document.removeEventListener('mousemove', this.widgetDragListener, { capture: true });
+            this.leftPanelHandler.refresh();
+            this.rightPanelHandler.refresh();
+            this.widgetDragListener = undefined;
+        }
     }
 
     getLayoutData(): ApplicationShell.LayoutData {

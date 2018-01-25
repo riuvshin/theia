@@ -13,7 +13,6 @@ import { Signal } from '@phosphor/signaling';
 import { Message } from '@phosphor/messaging';
 import { ArrayExt } from '@phosphor/algorithm';
 import { ElementExt } from '@phosphor/domutils';
-import { IDragEvent } from '@phosphor/dragdrop';
 
 /** The class name added to hidden content nodes, which are required to render vertical side bars. */
 const HIDDEN_CONTENT_CLASS = 'theia-TabBar-hidden-content';

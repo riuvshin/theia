@@ -35,8 +35,6 @@ export class SidePanelHandler {
         create: () => undefined
     });
 
-    private static readonly globalHandlers: SidePanelHandler[] = [];
-
     @inject(TabBarRendererFactory) protected tabBarRendererFactory: () => TabBarRenderer;
 
     protected side: 'left' | 'right' | 'bottom';
@@ -56,15 +54,7 @@ export class SidePanelHandler {
         this.dockPanel = this.createSidePanel();
         this.container = this.createContainer();
 
-        SidePanelHandler.globalHandlers.push(this);
-        this.container.disposed.connect(() => {
-            const index = SidePanelHandler.globalHandlers.indexOf(this);
-            if (index >= 0) {
-                SidePanelHandler.globalHandlers.splice(index, 1);
-            }
-        });
-
-        this.refreshVisibility();
+        this.refresh();
     }
 
     protected createSideBar(): SideTabBar {
@@ -156,7 +146,7 @@ export class SidePanelHandler {
                 }
             }
         }
-        this.refreshVisibility();
+        this.refresh();
     }
 
     /**
@@ -205,7 +195,7 @@ export class SidePanelHandler {
             this.container.show();
             this.tabBar.show();
             this.dockPanel.show();
-            this.setPanelSize(100);
+            this.setPanelSize(SidePanel.EMPTY_PANEL_SIZE);
         }
     }
 
@@ -216,7 +206,7 @@ export class SidePanelHandler {
         if (this.tabBar.currentTitle) {
             this.tabBar.currentTitle = null;
         } else {
-            this.refreshVisibility();
+            this.refresh();
         }
     }
 
@@ -235,7 +225,7 @@ export class SidePanelHandler {
     /**
      * Refresh the visibility of the side bar and dock panel.
      */
-    protected refreshVisibility(): void {
+    refresh(): void {
         const hideSideBar = this.tabBar.titles.length === 0;
         const currentTitle = this.tabBar.currentTitle;
         const hideDockPanel = currentTitle === null;
@@ -315,7 +305,7 @@ export class SidePanelHandler {
         if (currentIndex >= 0) {
             this.lastActiveTabIndex = currentIndex;
         }
-        this.refreshVisibility();
+        this.refresh();
     }
 
     /**
@@ -340,9 +330,6 @@ export class SidePanelHandler {
         // Release the tab bar's hold on the mouse
         sender.releaseMouse();
 
-        // Make all side bars visible so we can drag the detached widget into them
-        const previousState = SidePanelHandler.showAllSideBars();
-
         // Create and start a drag to move the selected tab to another panel
         const mimeData = new MimeData();
         mimeData.setData('application/vnd.phosphor.widget-factory', () => title.owner);
@@ -356,8 +343,10 @@ export class SidePanelHandler {
         tab.classList.add('p-mod-hidden');
         drag.start(clientX, clientY).then(() => {
             tab.classList.remove('p-mod-hidden');
-            SidePanelHandler.resetAllSideBars(previousState, title);
+            SidePanel.fireDragEnded(drag);
         });
+
+        SidePanel.fireDragStarted(drag);
     }
 
     /**
@@ -384,7 +373,7 @@ export class SidePanelHandler {
                 }
             }
             this.tabBar.insertTab(index, widget.title);
-            this.refreshVisibility();
+            this.refresh();
         }
     }
 
@@ -400,38 +389,9 @@ export class SidePanelHandler {
      */
     protected onWidgetRemoved(sender: DockPanel, widget: Widget): void {
         this.tabBar.removeTab(widget.title);
-        this.refreshVisibility();
+        this.refresh();
     }
 
-    static showAllSideBars(): SidePanel.SideBarState[] {
-        const previousState: SidePanel.SideBarState[] = [];
-        for (const handler of SidePanelHandler.globalHandlers) {
-            previousState.push({
-                isExpanded: handler.tabBar.currentTitle !== null
-            });
-            if (handler.container.isAttached) {
-                handler.expand();
-            }
-        }
-        return previousState;
-    }
-
-    static resetAllSideBars(previousState: SidePanel.SideBarState[] = [], activeTitle?: Title<Widget>): void {
-        for (let i = 0; i < SidePanelHandler.globalHandlers.length; i++) {
-            const handler = SidePanelHandler.globalHandlers[i];
-            const state = i < previousState.length ? previousState[i] : undefined;
-            if (handler.container.isAttached) {
-                if (state) {
-                    if (state.isExpanded) {
-                        handler.expand();
-                    } else if (!activeTitle || handler.tabBar.currentTitle !== activeTitle) {
-                        handler.collapse();
-                    }
-                }
-                handler.refreshVisibility();
-            }
-        }
-    }
 }
 
 export namespace SidePanel {
@@ -465,8 +425,29 @@ export namespace SidePanel {
         expanded?: boolean;
     }
 
-    export interface SideBarState {
-        isExpanded: boolean;
+    export const EMPTY_PANEL_SIZE = 100;
+
+    const dragStartedCallbacks: ((drag: Drag) => void)[] = [];
+    const dragEndedCallbacks: ((drag: Drag) => void)[] = [];
+
+    export function onDragStarted(callback: (drag: Drag) => void): void {
+        dragStartedCallbacks.push(callback);
+    }
+
+    export function onDragEnded(callback: (drag: Drag) => void): void {
+        dragEndedCallbacks.push(callback);
+    }
+
+    export function fireDragStarted(drag: Drag): void {
+        for (const callback of dragStartedCallbacks) {
+            callback(drag);
+        }
+    }
+
+    export function fireDragEnded(drag: Drag): void {
+        for (const callback of dragEndedCallbacks) {
+            callback(drag);
+        }
     }
 }
 
@@ -476,8 +457,6 @@ export namespace SidePanel {
 export class TheiaDockPanel extends DockPanel {
 
     private __drag?: Drag;
-    private __draggedWidget?: Widget;
-    private previousSideBarState?: SidePanel.SideBarState[];
 
     constructor(options?: DockPanel.IOptions) {
         super(options);
@@ -487,22 +466,10 @@ export class TheiaDockPanel extends DockPanel {
             set: (drag: Drag) => {
                 if (drag) {
                     // A drag has been started
-                    window.requestAnimationFrame(() => {
-                        this.previousSideBarState = SidePanelHandler.showAllSideBars();
-                    });
-                    const factory = drag.mimeData.getData('application/vnd.phosphor.widget-factory');
-                    if (typeof factory === 'function') {
-                        const widget = factory();
-                        if (widget instanceof Widget) {
-                            this.__draggedWidget = widget;
-                        }
-                    }
-                } else {
+                    SidePanel.fireDragStarted(drag);
+                } else if (this.__drag) {
                     // A drag has been completed
-                    const activeTitle = this.__draggedWidget ? this.__draggedWidget.title : undefined;
-                    SidePanelHandler.resetAllSideBars(this.previousSideBarState, activeTitle);
-                    this.previousSideBarState = undefined;
-                    this.__draggedWidget = undefined;
+                    SidePanel.fireDragEnded(this.__drag);
                 }
                 this.__drag = drag;
             }
