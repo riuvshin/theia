@@ -91,11 +91,12 @@ export class EditorManagerImpl implements EditorManager, WidgetFactory {
     }
 
     canHandle(uri: URI, input?: EditorInput): number {
-        return 100;
+        return uri.scheme === 'file' ? 100 : 0;
     }
 
     open(uri: URI, input?: EditorInput): Promise<EditorWidget> {
-        return this.widgetManager.getOrCreateWidget<EditorWidget>(this.id, uri.toString()).then(editor => {
+        const trimmedUri = uri.withoutFragment().withoutQuery();
+        return this.widgetManager.getOrCreateWidget<EditorWidget>(this.id, trimmedUri.toString()).then(editor => {
             if (!editor.isAttached) {
                 this.app.shell.addWidget(editor, { area: 'main' });
             }
