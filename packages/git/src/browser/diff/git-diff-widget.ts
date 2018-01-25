@@ -9,13 +9,12 @@ import { injectable, inject } from "inversify";
 import { h } from "@phosphor/virtualdom";
 import { GIT_DIFF } from "./git-diff-contribution";
 import { DiffUris } from '@theia/editor/lib/browser/diff-uris';
-import { GitDiffService } from './git-diff-service';
 import { GitDiffViewOptions } from './git-diff-model';
 import { VirtualRenderer, open, OpenerService, StatefulWidget } from "@theia/core/lib/browser";
 import { GitRepositoryProvider } from '../git-repository-provider';
 import { GIT_RESOURCE_SCHEME } from '../git-resource';
 import URI from "@theia/core/lib/common/uri";
-import { GitFileChange, GitFileStatus, GitUtils } from '../../common';
+import { GitFileChange, GitFileStatus, GitUtils, Git } from '../../common';
 import { LabelProvider } from '@theia/core/lib/browser/label-provider';
 import { GitBaseWidget } from "../git-base-widget";
 import { GitFileChangeNode } from "../git-widget";
@@ -48,7 +47,7 @@ export class GitDiffWidget extends GitBaseWidget implements StatefulWidget {
     protected viewModel: GitDiffViewModel;
 
     constructor(
-        @inject(GitDiffService) protected readonly gitDiffService: GitDiffService,
+        @inject(Git) protected readonly git: Git,
         @inject(GitRepositoryProvider) protected repositoryProvider: GitRepositoryProvider,
         @inject(LabelProvider) protected labelProvider: LabelProvider,
         @inject(NotificationsMessageClient) protected readonly notifications: NotificationsMessageClient,
@@ -63,7 +62,13 @@ export class GitDiffWidget extends GitBaseWidget implements StatefulWidget {
     async initialize(options: GitDiffViewOptions) {
         const repository = this.repositoryProvider.selectedRepository;
         if (repository) {
-            const fileChanges: GitFileChange[] = await this.gitDiffService.getDiff(repository, options);
+            const fileChanges: GitFileChange[] = await this.git.diff(repository, {
+                range: {
+                    fromRevision: options.fromRevision,
+                    toRevision: options.toRevision
+                },
+                uri: options.fileUri
+            });
             const fileChangeNodes: GitFileChangeNode[] = [];
             for (const fileChange of fileChanges) {
                 const uri = fileChange.uri;
