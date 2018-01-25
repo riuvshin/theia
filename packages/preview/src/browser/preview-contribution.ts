@@ -6,11 +6,12 @@
  */
 
 import { injectable, inject } from "inversify";
-import { FrontendApplicationContribution, FrontendApplication, OpenHandler, OpenerOptions, ApplicationShell } from "@theia/core/lib/browser";
+import { FrontendApplicationContribution, FrontendApplication, OpenHandler, OpenerOptions, ApplicationShell, WidgetManager } from "@theia/core/lib/browser";
 import { EDITOR_CONTEXT_MENU, EditorManager, TextEditor } from '@theia/editor/lib/browser';
-import { CommandContribution, CommandRegistry, Command, MenuContribution, MenuModelRegistry, CommandHandler, Disposable } from "@theia/core/lib/common";
-import { DisposableCollection } from '@theia/core';
-import { WidgetManager } from '@theia/core/lib/browser/widget-manager';
+import {
+    ResourceProvider, DisposableCollection, CommandContribution, CommandRegistry, Command, MenuContribution, MenuModelRegistry,
+    CommandHandler, Disposable, MessageService
+} from "@theia/core/lib/common";
 import URI from '@theia/core/lib/common/uri';
 import { Position } from 'vscode-languageserver-types';
 import { PreviewWidget, PREVIEW_WIDGET_FACTORY_ID } from './preview-widget';
@@ -50,6 +51,12 @@ export class PreviewContribution implements CommandContribution, MenuContributio
 
     @inject(PreviewWidgetManager)
     protected readonly previewWidgetManager: PreviewWidgetManager;
+
+    @inject(ResourceProvider)
+    protected readonly resourceProvider: ResourceProvider;
+
+    @inject(MessageService)
+    protected readonly messageService: MessageService;
 
     protected readonly syncronizedUris = new Set<string>();
 
@@ -121,10 +128,7 @@ export class PreviewContribution implements CommandContribution, MenuContributio
                     line: line + 1,
                     character: 0
                 }
-            },
-                {
-                    at: 'top'
-                });
+            }, { at: 'top' });
         });
     }
 
@@ -157,7 +161,13 @@ export class PreviewContribution implements CommandContribution, MenuContributio
         return canHandle;
     }
 
-    async open(uri: URI, options?: PreviewOpenerOptions): Promise<PreviewWidget> {
+    async open(uri: URI, options?: PreviewOpenerOptions): Promise<PreviewWidget | undefined> {
+        try {
+            await this.resourceProvider(uri);
+        } catch (error) {
+            this.messageService.warn(`'${uri.path.base}' is missing.`);
+            return;
+        }
         const openerOptions = this.updateOpenerOptions(options);
         const previewWidget = <PreviewWidget>await this.widgetManager.getOrCreateWidget(PREVIEW_WIDGET_FACTORY_ID, uri.toString());
         if (!previewWidget.isAttached) {
