@@ -152,8 +152,8 @@ export class JsonRpcProxyFactory<T extends object> implements ProxyHandler<T> {
             }
             const reason = e.message || '';
             const stack = e.stack || '';
-            throw new ResponseError(ErrorCodes.InternalError, `Request ${method} failed with error: ${reason}
-${stack}`);
+            console.error(`Request ${method} failed with error: ${reason}`, stack);
+            throw new ResponseError(ErrorCodes.InternalError, reason);
         }
     }
 
